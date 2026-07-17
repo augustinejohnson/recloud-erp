@@ -105,15 +105,6 @@ export default function CrmModule({
 
   const handleDeleteCustomer = async (id) => {
     if (confirm("Are you sure you want to delete this customer?")) {
-      const customer = customers.find(c => c.id === id);
-      if (customer) {
-        // Also remove their portal access if they have one
-        const clientEmployees = employees.filter(e => e.role === 'client' || e.role === 'deactivated_client');
-        const linkedClient = clientEmployees.find(e => e.linkedCustomerId === id || e.name?.toLowerCase() === customer.name?.toLowerCase());
-        if (linkedClient) {
-          await deleteEmployee(linkedClient.id, currentTenant);
-        }
-      }
       await deleteCustomer(id, currentTenant);
       refreshData();
     }
@@ -547,6 +538,57 @@ export default function CrmModule({
         </div>
       </div>
 
+
+        {activeTab === 'customers' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-x-auto animate-in fade-in mb-6">
+            <table className="w-full text-left border-collapse whitespace-nowrap">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  <th className="p-4 font-bold border-b border-slate-200">Customer Name</th>
+                  <th className="p-4 font-bold border-b border-slate-200">Contact</th>
+                  <th className="p-4 font-bold border-b border-slate-200">Phone</th>
+                  <th className="p-4 font-bold border-b border-slate-200">Email</th>
+                  <th className="p-4 font-bold border-b border-slate-200 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredCustomers.length === 0 ? (
+                  <tr><td colSpan="5" className="p-8 text-center text-slate-500 font-medium">No customers found.</td></tr>
+                ) : filteredCustomers.map(customer => (
+                  <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
+                          {customer.name?.charAt(0)}
+                        </div>
+                        <p className="font-bold text-slate-800 text-sm truncate max-w-[200px]">{customer.name}</p>
+                      </div>
+                    </td>
+                    <td className="p-4 text-sm font-medium text-slate-700">{customer.contactPerson || '—'}</td>
+                    <td className="p-4 text-sm text-slate-600">{customer.phone || '—'}</td>
+                    <td className="p-4 text-sm text-slate-600">{customer.email || '—'}</td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => { setSelectedCustomer(customer); setIsEmailModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors tooltip" title="Send Email">
+                          <Mail className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => { setSelectedCustomer(customer); setIsPhoneModalOpen(true); }} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors tooltip" title="Log Call">
+                          <Phone className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => { setEditingCustomer(customer); setIsAddCustomerOpen(true); }} className="p-2 text-slate-400 hover:text-recloud-600 hover:bg-recloud-50 rounded-lg transition-colors tooltip" title="Edit Customer">
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleDeleteCustomer(customer.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors tooltip" title="Delete Customer">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {activeTab === 'dashboard' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in mb-6">
