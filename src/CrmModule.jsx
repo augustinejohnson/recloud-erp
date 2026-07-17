@@ -105,6 +105,15 @@ export default function CrmModule({
 
   const handleDeleteCustomer = async (id) => {
     if (confirm("Are you sure you want to delete this customer?")) {
+      const customer = customers.find(c => c.id === id);
+      if (customer) {
+        // Also remove their portal access if they have one
+        const clientEmployees = employees.filter(e => e.role === 'client' || e.role === 'deactivated_client');
+        const linkedClient = clientEmployees.find(e => e.linkedCustomerId === id || e.name?.toLowerCase() === customer.name?.toLowerCase());
+        if (linkedClient) {
+          await deleteEmployee(linkedClient.id, currentTenant);
+        }
+      }
       await deleteCustomer(id, currentTenant);
       refreshData();
     }

@@ -373,13 +373,14 @@ export default function App() {
   };
 
   const handleUpdateApplicantStatus = async (id, newStatus) => {
+    setApplicants(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
     try {
       await updateApplicantStatus(id, newStatus, currentTenant);
       const appData = await getApplicants(currentTenant);
       setApplicants(appData);
       
       if (newStatus === 'Hired') {
-        const hiredApp = applicants.find(a => a.id === id);
+        const hiredApp = applicants.find(a => a.id === id) || appData.find(a => a.id === id);
         if (hiredApp) {
           setNewEmployee({ ...newEmployee, name: hiredApp.name, role: hiredApp.role, phone: hiredApp.phone, email: hiredApp.email });
           setIsAddModalOpen(true);
@@ -387,6 +388,8 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
+      const appData = await getApplicants(currentTenant);
+      setApplicants(appData);
     }
   };
 
@@ -640,6 +643,8 @@ export default function App() {
   };
 
   const handleToggleClock = async (emp) => {
+    const nextStatus = emp.status === 'Clocked In' ? 'Clocked Out' : 'Clocked In';
+    setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, status: nextStatus } : e));
     try {
       if (emp.status === 'Clocked In') {
         await clockOut(emp.id, currentTenant);
@@ -649,6 +654,7 @@ export default function App() {
       fetchEmployees();
     } catch (error) {
       console.error("Error toggling clock status:", error);
+      fetchEmployees();
     }
   };
 
@@ -817,32 +823,52 @@ export default function App() {
     }
   };
 
+  const fetchLeaves = async () => {
+    try {
+      const data = await getLeaveRequests(currentTenant);
+      setLeaves(data);
+    } catch (error) {
+      console.error("Error fetching leaves:", error);
+    }
+  };
+
   const handleUpdateLeave = async (id, status) => {
+    setLeaves(prev => prev.map(l => l.id === id ? { ...l, status } : l));
     try {
       await updateLeaveStatus(id, status, currentTenant);
       fetchLeaves();
     } catch (error) {
       console.error("Error updating leave:", error);
+      fetchLeaves();
     }
   };
 
   const handleShiftClick = async (emp, dayStr) => {
-    // Optimistically update UI could be added here, but for now we wait for Firebase
     const existing = shifts.find(s => s.employeeId === emp.id && s.date === dayStr);
+    let nextShiftType = null;
+    if (existing) {
+      if (existing.shiftType === 'Morning') nextShiftType = 'Afternoon';
+      else if (existing.shiftType === 'Afternoon') nextShiftType = 'Night';
+    } else {
+      nextShiftType = 'Morning';
+    }
+
+    let optimShifts = [...shifts];
+    if (existing) optimShifts = optimShifts.filter(s => s.id !== existing.id);
+    if (nextShiftType) optimShifts.push({ id: 'temp_' + Date.now(), employeeId: emp.id, date: dayStr, shiftType: nextShiftType });
+    setShifts(optimShifts);
+
     try {
       if (existing) {
         await removeShift(existing.id, currentTenant);
-        if (existing.shiftType === 'Morning') {
-          await assignShift({ employeeId: emp.id, date: dayStr, shiftType: 'Afternoon' }, currentTenant);
-        } else if (existing.shiftType === 'Afternoon') {
-          await assignShift({ employeeId: emp.id, date: dayStr, shiftType: 'Night' }, currentTenant);
-        }
+        if (nextShiftType) await assignShift({ employeeId: emp.id, date: dayStr, shiftType: nextShiftType }, currentTenant);
       } else {
         await assignShift({ employeeId: emp.id, date: dayStr, shiftType: 'Morning' }, currentTenant);
       }
       fetchShifts();
     } catch (error) {
       console.error("Error toggling shift:", error);
+      fetchShifts();
     }
   };
 
@@ -1298,17 +1324,19 @@ export default function App() {
               </>
             )}
 
-            <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('documents'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'documents' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
-              <FolderOpen className="w-5 h-5" /> Documents
-            </button>
-
-            <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('projects'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'projects' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
-              <Kanban className="w-5 h-5" /> Projects
-            </button>
-
-            <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('discuss'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'discuss' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
-              <MessageCircle className="w-5 h-5" /> Discuss
-            </button>
+            {['admin', 'hr_manager', 'sales_manager', 'inventory_manager', 'accountant', 'staff'].includes(currentUser.role) && (
+              <>
+                <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('documents'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'documents' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                  <FolderOpen className="w-5 h-5" /> Documents
+                </button>
+                <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('projects'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'projects' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                  <Kanban className="w-5 h-5" /> Projects
+                </button>
+                <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('discuss'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'discuss' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                  <MessageCircle className="w-5 h-5" /> Discuss
+                </button>
+              </>
+            )}
 
             {['admin', 'super_admin'].includes(currentUser.role) && (
               <>
@@ -2507,19 +2535,19 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'discuss' && (
+            {activeTab === 'discuss' && ['admin', 'hr_manager', 'sales_manager', 'inventory_manager', 'accountant', 'staff'].includes(currentUser.role) && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><DiscussModule currentUser={currentUser} currentTenant={currentTenant} /></ErrorBoundary>
               </div>
             )}
 
-            {activeTab === 'documents' && (
+            {activeTab === 'documents' && ['admin', 'hr_manager', 'sales_manager', 'inventory_manager', 'accountant', 'staff'].includes(currentUser.role) && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><DocumentsModule currentUser={currentUser} currentTenant={currentTenant} /></ErrorBoundary>
               </div>
             )}
 
-            {activeTab === 'projects' && (
+            {activeTab === 'projects' && ['admin', 'hr_manager', 'sales_manager', 'inventory_manager', 'accountant', 'staff'].includes(currentUser.role) && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><ProjectsModule currentUser={currentUser} currentTenant={currentTenant} customers={customers} /></ErrorBoundary>
               </div>

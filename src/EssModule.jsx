@@ -1,21 +1,28 @@
 import React from 'react';
-import { Users, Clock, Calendar, FileText, CheckCircle2, XCircle, Search, Plus, CalendarCheck, Briefcase } from 'lucide-react';
+import { Clock, CalendarCheck, Receipt, FileText, Download, Briefcase, CheckCircle2 } from 'lucide-react';
 
 export default function EssModule({
+  currentUser,
+  handleStaffClock,
+  setIsLeaveModalOpen,
+  setActiveTab,
+  getLocalDateStr,
   shifts,
   leaves,
-  payslips,
-  documents,
-  reviews,
-  currentUser,
-  handleUploadDocument,
-  getLocalDateStr,
   searchQuery,
-  setActiveTab
+  payslips,
+  downloadPayslipPDF,
+  newDoc,
+  setNewDoc,
+  handleUploadDocument,
+  handleFileChange,
+  documents,
+  handleDownloadDocument,
+  reviews
 }) {
   return (
     <>
-          {activeTab === 'ess' && (
+      
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto">
               <div className="mb-8">
                 <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Self Service Portal</h2>
@@ -94,7 +101,7 @@ export default function EssModule({
                   <CalendarCheck className="w-5 h-5 text-recloud-500" /> My Leave Requests
                 </h3>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full min-w-max text-left text-sm whitespace-nowrap">
                     <thead className="bg-slate-50/50 text-slate-500 font-medium border-b border-slate-100">
                       <tr>
                         <th className="px-4 py-3">Type</th>
@@ -227,9 +234,7 @@ export default function EssModule({
                 </div>
               </div>
             </div>
-          )}
-
-
+          
     </>
   );
 }
