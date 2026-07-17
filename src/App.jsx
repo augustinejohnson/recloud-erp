@@ -1370,7 +1370,7 @@ export default function App() {
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-transparent relative">
 
         {activeTab !== 'launcher' && (
-        <header className="h-16 glass flex items-center justify-between px-4 md:px-8 z-10 gap-2 md:gap-4">
+        <header className="h-16 shrink-0 glass flex items-center justify-between px-4 md:px-8 z-10 gap-2 md:gap-4">
           <div className="flex items-center gap-2 md:gap-4 flex-1 md:flex-none md:w-[500px] relative">
             <button 
               className="md:hidden p-1.5 text-slate-500 hover:text-slate-800 focus:outline-none rounded-lg hover:bg-slate-100"

@@ -51,7 +51,7 @@ export default function AiAssistantModule({ currentUser }) {
   ];
 
   return (
-    <div className="flex flex-col w-full h-[70vh] md:h-full md:min-h-[500px] rounded-3xl overflow-hidden relative border border-white/50 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 shadow-xl shadow-indigo-900/10 backdrop-blur-xl">
+    <div className="flex flex-col w-full h-full md:min-h-[500px] rounded-3xl overflow-hidden relative border border-white/50 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 shadow-xl shadow-indigo-900/10 backdrop-blur-xl">
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-purple-400/20 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-indigo-400/20 rounded-full blur-[120px] pointer-events-none"></div>
       

@@ -26,6 +26,7 @@ export default function PosModule({ currentTenant, currentUser }) {
   const [showEndShift, setShowEndShift] = useState(false);
   const [activeShift, setActiveShift] = useState(null);
   const [actualCash, setActualCash] = useState('');
+  const [openingFloat, setOpeningFloat] = useState('');
 
   useEffect(() => {
     const savedShift = localStorage.getItem('activeShift');
