@@ -7,14 +7,16 @@ export default function AiAssistantModule({ currentUser }) {
   ]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
   };
 
   const handleSend = (e) => {
@@ -91,7 +93,7 @@ export default function AiAssistantModule({ currentUser }) {
           <h2 className="font-black text-slate-800 text-base">Recloud AI</h2>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-6">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-6">
           {/* Mobile suggestions - shown inline at top */}
           {messages.length <= 1 && (
             <div className="md:hidden flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -134,7 +136,6 @@ export default function AiAssistantModule({ currentUser }) {
               </div>
             </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Area */}
