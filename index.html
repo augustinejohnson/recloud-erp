@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+<script>
+  window.addEventListener('error', function(e) {
+    fetch('http://localhost:4000/?err=' + encodeURIComponent(e.message + ' at ' + e.filename + ':' + e.lineno));
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    fetch('http://localhost:4000/?err=' + encodeURIComponent('Promise rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)));
+  });
+</script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="description" content="Recloud ERP Platform - Enterprise Resource Planning for modern businesses" />
+    
+    <!-- PWA / Native App Feel -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Recloud ERP" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="format-detection" content="telephone=no" />
+    
+    <title>Recloud ERP</title>
+    <!-- Google Fonts for ultra-premium typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-slate-50 text-slate-800 antialiased selection:bg-recloud-200 selection:text-recloud-900">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
