@@ -226,9 +226,10 @@ export default function InventoryModule({
     
     // We only process CSV for simplicity.
     const text = await file.text();
-    // basic CSV regex to ignore commas inside quotes
-    const re = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
-    const rows = text.split('\n').filter(row => row.trim().length > 0);
+    const delimiter = text.includes(';') && !text.includes(',') ? ';' : ',';
+    // basic CSV regex to ignore delimiters inside quotes
+    const re = delimiter === ';' ? /;(?=(?:(?:[^"]*"){2})*[^"]*$)/ : /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+    const rows = text.split(/\r?\n/).filter(row => row.trim().length > 0);
     if (rows.length < 2) {
       alert("Invalid CSV or empty file.");
       return;
@@ -254,14 +255,14 @@ export default function InventoryModule({
     // For large files, we might want a loading spinner. The app doesn't have a global loader here but we can rely on standard alerts.
     for (let i = 1; i < rows.length; i++) {
        const cols = rows[i].split(re).map(col => col.replace(/^"|"$/g, '').trim());
-       if (cols.length < 2 || !cols[nameIdx]) continue;
+       if (!cols[nameIdx]) continue;
        
        const p = {
          ...initialProductState,
          name: cols[nameIdx] || '',
-         genericName: genericIdx !== -1 ? cols[genericIdx] : '',
-         category: catIdx !== -1 ? cols[catIdx] : 'Imported',
-         subCategory: subCatIdx !== -1 ? cols[subCatIdx] : '',
+         genericName: genericIdx !== -1 && cols[genericIdx] ? cols[genericIdx] : '',
+         category: catIdx !== -1 && cols[catIdx] ? cols[catIdx] : 'Imported',
+         subCategory: subCatIdx !== -1 && cols[subCatIdx] ? cols[subCatIdx] : '',
          costPrice: staffPriceIdx !== -1 ? cols[staffPriceIdx].replace(/[^\d.]/g, '') || '0' : '0', // Fallback for old CSVs, ideally should have a costPrice col
          priceStaff: staffPriceIdx !== -1 ? cols[staffPriceIdx].replace(/[^\d.]/g, '') || '0' : '0',
          priceWholesale: wholesalePriceIdx !== -1 ? cols[wholesalePriceIdx].replace(/[^\d.]/g, '') || '0' : '0',
