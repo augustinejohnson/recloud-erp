@@ -2,15 +2,28 @@ import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Filter, DollarSign, TrendingUp, Users, ShoppingBag, Calendar, Download } from 'lucide-react';
 
-export default function ReportsModule({ sales, b2bOrders, customers, products, employees }) {
+export default function ReportsModule({ sales, b2bOrders, customers, products, employees, invoices, currentIndustry }) {
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedProduct, setSelectedProduct] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [selectedStaff, setSelectedStaff] = useState('');
   const [orderType, setOrderType] = useState('all'); // all, pos, b2b
 
-  // Combine and normalize POS and B2B orders
+  // Combine and normalize POS and B2B orders (or Invoices for Law Firm)
   const allOrders = useMemo(() => {
+    if (currentIndustry === 'law_firm') {
+      const invs = (invoices || []).filter(i => i.status === 'Paid' && i.type !== 'quote').map(i => ({
+        ...i,
+        type: 'Invoiced Revenue',
+        date: new Date(i.createdAt?.seconds * 1000 || i.createdAt || Date.now()),
+        staff: i.createdBy || 'Admin',
+        customer: i.customerName || 'Client',
+        invoiceNumber: i.invoiceNumber || i.id.substring(0, 8).toUpperCase(),
+        totalAmount: i.amount
+      }));
+      return invs.sort((a, b) => b.date - a.date);
+    }
+
     const pos = (sales || []).map(s => ({
       ...s,
       type: 'POS Retail',
@@ -30,7 +43,7 @@ export default function ReportsModule({ sales, b2bOrders, customers, products, e
     }));
 
     return [...pos, ...b2b].sort((a, b) => b.date - a.date);
-  }, [sales, b2bOrders]);
+  }, [sales, b2bOrders, invoices, currentIndustry]);
 
   // Apply Filters
   const filteredOrders = useMemo(() => {
@@ -130,6 +143,8 @@ export default function ReportsModule({ sales, b2bOrders, customers, products, e
       monthsMap[monthYear].total += amount;
       if (order.type === 'POS Retail') {
         monthsMap[monthYear].posSales += amount;
+      } else if (order.type === 'Invoiced Revenue') {
+        monthsMap[monthYear].invoiced += amount;
       } else {
         monthsMap[monthYear].b2bSales += amount;
       }
@@ -220,8 +235,14 @@ export default function ReportsModule({ sales, b2bOrders, customers, products, e
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                   />
                   <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                  <Bar dataKey="posSales" name="POS Retail Sales" stackId="a" fill="#3b82f6" radius={[0, 0, 4, 4]} />
-                  <Bar dataKey="b2bSales" name="B2B Wholesale" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  {currentIndustry === 'law_firm' ? (
+                    <Bar dataKey="invoiced" name="Invoiced Revenue" stackId="a" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  ) : (
+                    <>
+                      <Bar dataKey="posSales" name="POS Retail Sales" stackId="a" fill="#3b82f6" radius={[0, 0, 4, 4]} />
+                      <Bar dataKey="b2bSales" name="B2B Wholesale" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    </>
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -245,19 +266,23 @@ export default function ReportsModule({ sales, b2bOrders, customers, products, e
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Sales Channel</label>
-                <select value={orderType} onChange={e => setOrderType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-recloud-500 outline-none bg-white">
-                  <option value="all">All Channels</option>
-                  <option value="pos">POS Retail Only</option>
-                  <option value="b2b">B2B Wholesale Only</option>
-                </select>
-              </div>
+              {currentIndustry !== 'law_firm' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Sales Channel</label>
+                  <select value={orderType} onChange={e => setOrderType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-recloud-500 outline-none bg-white">
+                    <option value="all">All Channels</option>
+                    <option value="pos">POS Retail Only</option>
+                    <option value="b2b">B2B Wholesale Only</option>
+                  </select>
+                </div>
+              )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Filter by Product</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">
+                  {currentIndustry === 'law_firm' ? 'Filter by Service/Item' : 'Filter by Product'}
+                </label>
                 <select value={selectedProduct} onChange={e => setSelectedProduct(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-recloud-500 outline-none bg-white">
-                  <option value="">Any Product</option>
+                  <option value="">Any {currentIndustry === 'law_firm' ? 'Service' : 'Product'}</option>
                   {(products || []).map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}

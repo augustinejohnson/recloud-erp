@@ -48,14 +48,21 @@ export default function PosModule({ currentTenant, currentUser }) {
     return () => { unsubProducts(); unsubCustomers(); };
   }, [currentTenant]);
 
+  const getFilteredStock = (product) => {
+    if (!currentUser?.warehouseId) return Number(product.stock || 0);
+    const branchStock = product.stockByWarehouse || {};
+    return Number(branchStock[currentUser.warehouseId] || 0);
+  };
+
   const addToCart = (product) => {
+    const availableStock = getFilteredStock(product);
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
-      if (existing.quantity >= product.stock) return alert('Cannot add more than available stock.');
+      if (existing.quantity >= availableStock) return alert('Cannot add more than available stock.');
       setCart(cart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
     } else {
-      if (product.stock < 1) return alert('Out of stock!');
-      setCart([...cart, { ...product, quantity: 1 }]);
+      if (availableStock < 1) return alert('Out of stock!');
+      setCart([...cart, { ...product, quantity: 1, availableStock }]);
     }
   };
 
@@ -63,7 +70,7 @@ export default function PosModule({ currentTenant, currentUser }) {
     setCart(cart.map(item => {
       if (item.id === id) {
         const newQ = item.quantity + delta;
-        if (newQ > item.stock) { alert('Exceeds stock!'); return item; }
+        if (newQ > item.availableStock) { alert('Exceeds stock!'); return item; }
         if (newQ < 1) return item;
         return { ...item, quantity: newQ };
       }
@@ -105,13 +112,34 @@ export default function PosModule({ currentTenant, currentUser }) {
       };
       await addDoc(invRef, invoiceData);
 
-      // Deduct stock
+      // Deduct stock properly
       for (const item of cart) {
         if (item.id) {
           const prodRef = doc(db, `organizations/${currentTenant}/inventory`, item.id);
-          await updateDoc(prodRef, {
-            stock: item.stock - item.quantity
-          });
+          
+          if (currentUser?.warehouseId) {
+             const currentBranchStock = Number(item.stockByWarehouse?.[currentUser.warehouseId] || 0);
+             const updatedStockByWarehouse = { 
+               ...(item.stockByWarehouse || {}), 
+               [currentUser.warehouseId]: currentBranchStock - item.quantity 
+             };
+             await updateDoc(prodRef, { stockByWarehouse: updatedStockByWarehouse });
+             
+             // Optionally record movement (basic)
+             const movementsRef = collection(db, `organizations/${currentTenant}/stockMovements`);
+             await addDoc(movementsRef, {
+               productId: item.id,
+               type: 'out',
+               qty: item.quantity,
+               warehouseId: currentUser.warehouseId,
+               note: `POS Sale (Invoice)`,
+               date: new Date().toISOString()
+             });
+          } else {
+             await updateDoc(prodRef, {
+               stock: Number(item.stock || 0) - item.quantity
+             });
+          }
         }
       }
 

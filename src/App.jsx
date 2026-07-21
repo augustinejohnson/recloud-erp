@@ -18,7 +18,7 @@ L.Icon.Default.mergeOptions({
 import { 
   Building2, Users, Receipt, LayoutDashboard, Settings, 
   Search, Plus, Bell, ChevronDown, Package, Clock, X, Phone, Mail, MapPin, Briefcase, Calendar, CalendarCheck, CheckCircle2, XCircle, Banknote, FileText, Download, Trash2, PieChart, MessageCircle, FolderOpen, Kanban, Sparkles, Menu
-, History } from 'lucide-react';
+, History, Database, Webhook, ShieldCheck, Landmark, Lock } from 'lucide-react';
 import { getEmployees, addEmployee, clockIn, clockOut, updateEmployee, deactivateEmployee, activateEmployee, deleteEmployee, getShifts, assignShift, removeShift, getLeaveRequests, submitLeaveRequest,  updateLeaveStatus,
   getPayslips,
   generatePayslip,
@@ -61,8 +61,17 @@ import { getEmployees, addEmployee, clockIn, clockOut, updateEmployee, deactivat
   getBranchOrders,
   addBranchOrder,
   updateBranchOrder,
-  deleteBranchOrder
+  deleteBranchOrder,
+  loginUser,
+  resetUserPassword,
+  logoutUser,
+  createAuthUser,
+  loginWithGoogle,
+  getUserWorkspaces,
+  db,
+  auth
 } from './firebase';
+import { collection, doc, onSnapshot, getDoc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 const CrmModule = React.lazy(() => import('./CrmModule'));
 const InventoryModule = React.lazy(() => import('./InventoryModule'));
 const PosModule = React.lazy(() => import('./PosModule'));
@@ -72,9 +81,13 @@ const AccountingModule = React.lazy(() => import('./AccountingModule'));
 const DiscussModule = React.lazy(() => import('./DiscussModule'));
 const DocumentsModule = React.lazy(() => import('./DocumentsModule'));
 const ProjectsModule = React.lazy(() => import('./ProjectsModule'));
+const LawModule = React.lazy(() => import('./LawModule'));
 const AiAssistantModule = React.lazy(() => import('./AiAssistantModule'));
 const HistoryModule = React.lazy(() => import('./HistoryModule'));
 const ClientPortalModule = React.lazy(() => import('./ClientPortalModule'));
+const ApiSettingsModule = React.lazy(() => import('./ApiSettingsModule'));
+const BackendModule = React.lazy(() => import('./BackendModule'));
+const WebhookModule = React.lazy(() => import('./WebhookModule'));
 import { validateEmailRealtime } from './utils/emailValidator';
 
 function LocationSelector({ newBranch, setNewBranch }) {
@@ -142,10 +155,16 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
+  // New auth states for multi-tenant login
+  const [availableWorkspaces, setAvailableWorkspaces] = useState([]);
+  const [tempAuthUser, setTempAuthUser] = useState(null);
+  const [showWorkspaceSelect, setShowWorkspaceSelect] = useState(false);
+
   const [regCompany, setRegCompany] = useState('');
   const [regWorkspace, setRegWorkspace] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [regIndustry, setRegIndustry] = useState('retail');
   
   const [hrTab, setHrTab] = useState('directory'); // 'directory', 'roster', 'leaves', or 'payroll'
   const [employees, setEmployees] = useState([]);
@@ -203,7 +222,15 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [settingsForm, setSettingsForm] = useState({ companyName: '', logoUrl: '', address: '', phone: '', bankName: '', accountName: '', accountNumber: '' });
+  const currentIndustry = tenantConfig?.industry || 'retail';
+  const isModuleEnabled = (moduleName) => {
+    if (currentIndustry === 'law_firm') {
+      if (['inventory', 'pos', 'b2b'].includes(moduleName)) return false;
+    }
+    return true;
+  };
+  
+  const [settingsForm, setSettingsForm] = useState({ companyName: '', logoUrl: '', address: '', phone: '', bankName: '', accountName: '', accountNumber: '', industry: 'retail' });
 
   const [settingsMessage, setSettingsMessage] = useState({ type: '', text: '' });
 
@@ -476,14 +503,18 @@ export default function App() {
 
   useEffect(() => {
     if (currentTenant) {
-      getTenantConfig(currentTenant).then(config => {
-        if (config) {
-          setTenantConfig(config);
+      getTenantConfig(currentTenant).then(configData => {
+        if (configData) {
+          setTenantConfig(configData);
           setSettingsForm({
-            companyName: config.companyName || '',
-            logoUrl: config.logoUrl || '',
-            address: config.address || '',
-            phone: config.phone || ''
+            companyName: configData.companyName || '',
+            logoUrl: configData.logoUrl || '',
+            address: configData.address || '',
+            phone: configData.phone || '',
+            bankName: configData.bankName || '',
+            accountName: configData.accountName || '',
+            accountNumber: configData.accountNumber || '',
+            industry: configData.industry || 'retail',
           });
         }
       });
@@ -633,12 +664,23 @@ export default function App() {
     const initials = newEmployee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
     
     try {
-      await addEmployee({ ...newEmployee, avatar: initials }, currentTenant);
+      // 1. Create the Firebase Auth User & send password reset
+      const authUid = await createAuthUser(newEmployee.email, newEmployee.name);
+      
+      // 2. Add the employee to Firestore using the generated Auth UID
+      await addEmployee({ ...newEmployee, id: authUid, avatar: initials }, currentTenant);
+      
       setIsAddModalOpen(false);
       setNewEmployee({ name: '', role: '', department: '', status: 'Clocked Out', phone: '', email: '', creditLimit: '0', currentBalance: 0 });
       fetchEmployees(); // Refresh list
+      alert("Employee created successfully! A password setup email has been sent to them.");
     } catch (error) {
       console.error("Error adding employee:", error);
+      if (error.code === 'auth/email-already-in-use') {
+        alert("This email is already registered in the system.");
+      } else {
+        alert("Failed to create employee: " + error.message);
+      }
     }
   };
 
@@ -873,70 +915,123 @@ export default function App() {
   };
 
   const [authMessage, setAuthMessage] = useState({ type: '', text: '' });
+  const [error, setError] = useState('');
+
+  const loadWorkspace = async (workspaceId, userUid) => {
+    try {
+      const empRef = doc(db, `organizations/${workspaceId}/employees`, userUid);
+      const empSnap = await getDoc(empRef);
+
+      if (empSnap.exists()) {
+        const empData = empSnap.data();
+        if (empData.status !== 'Inactive') {
+          setCurrentTenant(workspaceId);
+          setCurrentUser({ id: empSnap.id, ...empData });
+        } else {
+          await logoutUser();
+          setError('Your account is inactive. Please contact your administrator.');
+        }
+      } else {
+        await logoutUser();
+        setError('No employee record found for this account in the selected workspace.');
+      }
+    } catch (err) {
+      console.error("Error loading workspace:", err);
+      setError('Error connecting to workspace.');
+    }
+  };
+
+  const processUserWorkspaces = async (user) => {
+    const workspaces = await getUserWorkspaces(user.uid);
+    if (workspaces.length === 0) {
+      setPublicView('register');
+      setRegEmail(user.email || '');
+      setAuthMessage({ type: 'error', text: 'You need to register a workspace first to continue.' });
+    } else if (workspaces.length === 1) {
+      await loadWorkspace(workspaces[0].id, user.uid);
+    } else {
+      // Multiple workspaces, show selection UI
+      setAvailableWorkspaces(workspaces);
+      setTempAuthUser(user);
+      setShowWorkspaceSelect(true);
+    }
+  };
+
+  const handleWorkspaceSelect = async (workspaceId) => {
+    setError('');
+    setIsLoading(true);
+    if (tempAuthUser) {
+      await loadWorkspace(workspaceId, tempAuthUser.uid);
+    }
+    setIsLoading(false);
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setAuthMessage({ type: '', text: '' });
-    if (!loginWorkspace || !loginEmail) return;
-    
+    setError('');
+    setIsLoading(true);
+
+    try {
+      if (!loginEmail || !loginPassword) {
+        throw new Error("Email and password are required");
+      }
+      const user = await loginUser(loginEmail, loginPassword);
+      await processUserWorkspaces(user);
+    } catch (err) {
+      console.error("Login error:", err);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+      } else {
+        setError(err.message || 'An error occurred during login.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
     setIsLoading(true);
     try {
-      const cleanEmail = loginEmail.toLowerCase().trim();
-      const workspace = loginWorkspace.trim();
-
-      // For Admin demo login
-      if (cleanEmail.includes('admin')) {
-        setCurrentTenant(workspace);
-        setCurrentUser({ name: 'Isoiza O.', role: 'admin', email: cleanEmail, department: 'All', initials: 'IO' });
-        setActiveTab('launcher');
-      } else {
-        // Employee Login
-        const emps = await getEmployees(workspace);
-        // Reverse the array to find the most recently created profile in case of duplicate test emails
-        const emp = [...emps].reverse().find(e => e.email && e.email.toLowerCase().trim() === cleanEmail);
-        if (emp) {
-          if (emp.status === 'Inactive') {
-            setAuthMessage({ type: 'error', text: `This account has been deactivated. Please contact an administrator.` });
-            setIsLoading(false);
-            return;
-          }
-          if (emp.password && emp.password !== loginPassword && loginPassword !== 'admin') {
-            setAuthMessage({ type: 'error', text: `Incorrect password for ${loginEmail}.` });
-            setIsLoading(false);
-            return;
-          }
-          
-          const userRole = emp.role || 'staff';
-          setCurrentTenant(workspace);
-          setCurrentUser({ 
-            name: emp.name, 
-            role: userRole, 
-            email: loginEmail, 
-            department: emp.department || 'Operations', 
-            initials: emp.name.substring(0, 2).toUpperCase(), 
-            id: emp.id,
-            status: emp.status,
-            warehouseId: emp.warehouseId || null,
-            linkedCustomerId: emp.linkedCustomerId || null
-          });
-
-          setActiveTab('launcher');
-          
-        } else {
-          setAuthMessage({ type: 'error', text: `No employee with email "${loginEmail}" exists in workspace "${workspace}".` });
-        }
-      }
+      const user = await loginWithGoogle();
+      await processUserWorkspaces(user);
     } catch (err) {
-      console.error(err);
-      setAuthMessage({ type: 'error', text: `System Error: ${err.message}` });
+      console.error("Google Login error:", err);
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setError(err.message || 'An error occurred during Google login.');
+      }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
+  };
+
+  const handleForgotPassword = async () => {
+    if (!loginEmail) {
+      setError('Please enter your email address first to reset your password.');
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    try {
+      await resetUserPassword(loginEmail);
+      setError('Password reset email sent! Check your inbox.');
+    } catch (err) {
+      setError(err.message || 'Failed to send reset email.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setAuthMessage({ type: '', text: '' });
-    if (!regCompany || !regWorkspace || !regEmail || !regPassword) return;
+    
+    // Only require password if they aren't already authenticated for this email
+    const isAlreadyAuthenticated = auth.currentUser != null && auth.currentUser.email === regEmail;
+    
+    if (!regCompany || !regWorkspace || !regEmail) return;
+    if (!isAlreadyAuthenticated && !regPassword) return;
+
     setIsLoading(true);
     
     // Validate Email
@@ -952,7 +1047,7 @@ export default function App() {
       if (!slug) {
         throw new Error("Invalid Workspace ID. Please use alphanumeric characters.");
       }
-      await registerTenant(regCompany, slug, regEmail, regPassword);
+      await registerTenant(regCompany, slug, regEmail, regPassword, '', '', '', regIndustry);
       
       setLoginWorkspace(slug);
       setLoginEmail(regEmail);
@@ -962,6 +1057,7 @@ export default function App() {
       setRegWorkspace('');
       setRegEmail('');
       setRegPassword('');
+      setRegIndustry('retail');
       
       setAuthMessage({ type: 'success', text: `Successfully registered workspace: ${slug}!` });
       setPublicView('login');
@@ -1040,13 +1136,70 @@ export default function App() {
                   <input required type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-slate-50" placeholder="admin@acme.com" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Admin Password</label>
-                  <input required type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-slate-50" placeholder="••••••••" />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Industry / App Mode</label>
+                  <select value={regIndustry} onChange={e => setRegIndustry(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-slate-50">
+                    <option value="retail">Retail & General</option>
+                    <option value="law_firm">Law Firm & Legal Practice</option>
+                  </select>
                 </div>
+                {(!auth.currentUser || auth.currentUser.email !== regEmail) && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Admin Password</label>
+                    <input required type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-slate-50" placeholder="••••••••" />
+                  </div>
+                )}
                 <button type="submit" disabled={isLoading} className="w-full bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all mt-2 flex justify-center items-center gap-2">
                   {isLoading ? 'Creating Workspace...' : 'Launch Workspace'}
                 </button>
               </form>
+            </div>
+          </div>
+          
+          {/* Features Section */}
+          <div className="bg-white border-y border-slate-200 py-24 mt-12">
+            <div className="max-w-6xl mx-auto px-6">
+              <div className="text-center mb-16">
+                <h2 className="text-4xl font-bold text-slate-800 tracking-tight">Everything you need to run your business</h2>
+                <p className="text-slate-500 mt-4 text-xl">Now featuring a robust suite of tools tailored specifically for Law Firms & Legal Practices.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {/* Feature 1 */}
+                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                  <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Briefcase className="w-7 h-7" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-3">Advanced Case Management</h3>
+                  <p className="text-slate-600 leading-relaxed font-medium">Track opposing parties, counsels, court dates, and statutes of limitations with automated deadline indicators.</p>
+                </div>
+                {/* Feature 2 */}
+                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                  <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Clock className="w-7 h-7" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-3">Time Tracking & Billing</h3>
+                  <p className="text-slate-600 leading-relaxed font-medium">Log billable hours by task and rate. Automatically generate professional invoices for unbilled time with one click.</p>
+                </div>
+                {/* Feature 3 */}
+                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                  <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Landmark className="w-7 h-7" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-3">Trust Accounting (IOLTA)</h3>
+                  <p className="text-slate-600 leading-relaxed font-medium">Manage client retainers compliantly. Track trust liabilities separately and transfer earned fees to operations securely.</p>
+                </div>
+                {/* Feature 4 */}
+                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                  <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><ShieldCheck className="w-7 h-7" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-3">Global Conflict Checker</h3>
+                  <p className="text-slate-600 leading-relaxed font-medium">Maintain ethical compliance by deep-searching across all clients, cases, and opposing parties before taking a matter.</p>
+                </div>
+                {/* Feature 5 */}
+                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                  <div className="w-14 h-14 bg-recloud-100 text-recloud-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Users className="w-7 h-7" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-3">Retail & General ERP</h3>
+                  <p className="text-slate-600 leading-relaxed font-medium">Not a law firm? Manage HR, Shifts, Payroll, B2B Inventory, and general Accounting in one unified workspace.</p>
+                </div>
+                {/* Feature 6 */}
+                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                  <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Lock className="w-7 h-7" /></div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-3">Enterprise Security</h3>
+                  <p className="text-slate-600 leading-relaxed font-medium">Tenant-isolated architecture with granular role-based access control and firestore security rules to protect your data.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1058,13 +1211,13 @@ export default function App() {
         <div className="min-h-screen bg-slate-50 font-sans h-screen overflow-y-auto pb-20">
           <div className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
             <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setPublicView('landing')} title="Back to Landing Page">
                 {tenantConfig?.logoUrl ? (
-                  <img src={tenantConfig.logoUrl} alt="Logo" className="h-8 object-contain" />
+                  <img src={tenantConfig.logoUrl} alt="Logo" className="h-8 object-contain group-hover:opacity-90 transition-opacity" />
                 ) : (
-                  <div className="bg-recloud-600 p-2 rounded-xl"><Building2 className="text-white w-5 h-5"/></div>
+                  <div className="bg-recloud-600 p-2 rounded-xl group-hover:opacity-90 transition-opacity"><Building2 className="text-white w-5 h-5"/></div>
                 )}
-                <h1 className="text-xl font-bold text-slate-800 tracking-tight">{tenantConfig?.companyName || 'Recloud'} Careers</h1>
+                <h1 className="text-xl font-bold text-slate-800 tracking-tight group-hover:text-recloud-600 transition-colors">{tenantConfig?.companyName || 'Recloud'} Careers</h1>
               </div>
               <button onClick={() => setPublicView('login')} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Employee Portal</button>
             </div>
@@ -1164,7 +1317,11 @@ export default function App() {
 
         <div className="bg-white/80 backdrop-blur-xl p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-white/50 animate-in fade-in slide-in-from-bottom-8 duration-700 mx-4 my-auto">
           <div className="flex justify-between items-start mb-6">
-            <div className="bg-gradient-to-tr from-recloud-600 to-recloud-400 p-2.5 rounded-2xl shadow-lg shadow-recloud-500/30">
+            <div 
+              onClick={() => setPublicView('landing')}
+              className="bg-gradient-to-tr from-recloud-600 to-recloud-400 p-2.5 rounded-2xl shadow-lg shadow-recloud-500/30 cursor-pointer hover:opacity-90 transition-opacity tooltip"
+              title="Back to Landing Page"
+            >
               <Building2 className="text-white w-6 h-6" />
             </div>
             <button onClick={() => setPublicView('careers')} className="text-[11px] font-bold text-recloud-600 hover:text-recloud-700 bg-recloud-50 px-2.5 py-1.5 rounded-lg transition-colors">
@@ -1176,25 +1333,67 @@ export default function App() {
             <p className="text-slate-500 text-xs mt-1">Sign in to your enterprise workspace</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            {!urlOrg && (
+          {showWorkspaceSelect ? (
+            <div className="space-y-4">
+              <p className="text-slate-600 text-sm mb-4">You have access to multiple workspaces. Please select one to continue.</p>
+              {availableWorkspaces.map(ws => (
+                <button 
+                  key={ws.id} 
+                  onClick={() => handleWorkspaceSelect(ws.id)}
+                  className="w-full text-left px-4 py-3 border border-slate-200 rounded-xl hover:bg-recloud-50 hover:border-recloud-200 transition-colors flex items-center justify-between group"
+                >
+                  <div>
+                    <div className="font-bold text-slate-800">{ws.name}</div>
+                    <div className="text-xs text-slate-500 font-mono">Role: {ws.role}</div>
+                  </div>
+                  <div className="text-recloud-600 bg-recloud-50 px-2 py-1 rounded text-xs font-bold">Select</div>
+                </button>
+              ))}
+              <button 
+                onClick={() => { setShowWorkspaceSelect(false); logoutUser(); }}
+                className="w-full text-center text-sm font-semibold text-slate-500 hover:text-slate-700 mt-4 py-2"
+              >
+                Cancel and Log Out
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-[13px] font-semibold text-slate-700 mb-1">Organization ID</label>
-                <input type="text" value={loginWorkspace} onChange={e => setLoginWorkspace(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-white/50 font-mono text-recloud-600 font-bold" placeholder="e.g. g4mg" />
+                <label className="block text-[13px] font-semibold text-slate-700 mb-1">Email Address</label>
+                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-white/50" placeholder="name@company.com" />
               </div>
-            )}
-            <div>
-              <label className="block text-[13px] font-semibold text-slate-700 mb-1">Email Address</label>
-              <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} required className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-white/50" placeholder="name@company.com" />
-            </div>
-            <div>
-              <label className="block text-[13px] font-semibold text-slate-700 mb-1">Password</label>
-              <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-white/50" placeholder="••••••••" />
-            </div>
-            <button type="submit" className="w-full bg-recloud-600 hover:bg-recloud-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-recloud-500/30 transition-all transform hover:scale-[1.02] mt-2">
-              Sign In
-            </button>
-          </form>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[13px] font-semibold text-slate-700">Password</label>
+                  <button type="button" onClick={handleForgotPassword} className="text-xs text-recloud-600 hover:text-recloud-700 font-semibold transition-colors">Forgot Password?</button>
+                </div>
+                <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all bg-white/50" placeholder="••••••••" />
+              </div>
+              <button type="submit" disabled={isLoading} className="w-full bg-recloud-600 hover:bg-recloud-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-recloud-500/30 transition-all transform hover:scale-[1.02] mt-2">
+                {isLoading ? 'Logging in...' : 'Sign In'}
+              </button>
+              {error && <div className="text-red-500 text-sm mt-2 text-center">{error}</div>}
+              
+              <div className="relative mt-4 mb-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-slate-500">Or continue with</span>
+                </div>
+              </div>
+
+              <button 
+                type="button"
+                onClick={handleGoogleLogin} 
+                disabled={isLoading}
+                className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] mt-2"
+              >
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                Sign in with Google
+              </button>
+            </form>
+          )}
 
           <div className="mt-8 pt-6 border-t border-slate-200">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center mb-3">One-Click Demo Accounts</p>
@@ -1220,11 +1419,15 @@ export default function App() {
     if (currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin' && (e.role === 'admin' || e.role === 'super_admin')) {
       return false;
     }
-    // 2. If user is assigned to a specific branch, only show employees in that branch
+    // 2. Hide clients and B2B customers from the employee directory
+    if (e.role === 'client' || e.role === 'b2b_customer' || e.role === 'deactivated_client') {
+      return false;
+    }
+    // 3. If user is assigned to a specific branch, only show employees in that branch
     if (currentUser?.warehouseId && e.warehouseId !== currentUser.warehouseId) {
       return false;
     }
-    // 3. Apply search filter
+    // 4. Apply search filter
     return filterBySearch(e, ['name', 'department', 'role', 'email']);
   });
   const visibleLeaves = leaves.filter(l => filterBySearch(l, ['employeeName', 'type', 'status']));
@@ -1295,19 +1498,19 @@ export default function App() {
               </button>
             )}
 
-            {['admin', 'sales_manager'].includes(currentUser.role) && (
+            {['admin', 'sales_manager'].includes(currentUser.role) && isModuleEnabled('crm') && (
               <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('crm'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'crm' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
-                <Building2 className="w-5 h-5" /> CRM & Sales
+                <Building2 className="w-5 h-5" /> {currentIndustry === 'law_firm' ? 'Client Intake & CRM' : 'CRM & Sales'}
               </button>
             )}
 
-            {['admin', 'inventory_manager'].includes(currentUser.role) && (
+            {['admin', 'inventory_manager'].includes(currentUser.role) && isModuleEnabled('inventory') && (
               <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('inventory'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'inventory' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
                 <Package className="w-5 h-5" /> Inventory
               </button>
             )}
 
-            {['admin', 'sales_manager', 'cashier', 'sales_rep'].includes(currentUser.role) && (
+            {['admin', 'sales_manager', 'cashier', 'sales_rep'].includes(currentUser.role) && isModuleEnabled('pos') && (
               <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('pos'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'pos' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
                 <Banknote className="w-5 h-5" /> Point of Sale
               </button>
@@ -1330,7 +1533,7 @@ export default function App() {
                   <FolderOpen className="w-5 h-5" /> Documents
                 </button>
                 <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('projects'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'projects' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
-                  <Kanban className="w-5 h-5" /> Projects
+                  <Kanban className="w-5 h-5" /> {currentIndustry === 'law_firm' ? 'Cases & Matters' : 'Projects'}
                 </button>
                 <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('discuss'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'discuss' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
                   <MessageCircle className="w-5 h-5" /> Discuss
@@ -1341,9 +1544,20 @@ export default function App() {
             {['admin', 'super_admin'].includes(currentUser.role) && (
               <>
                 {['admin', 'super_admin'].includes(currentUser?.role) && (
-                  <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('history'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'history' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
-                    <History className={`w-5 h-5 ${activeTab === 'history' ? 'text-recloud-400' : 'text-slate-400'}`} /> Recycle Bin
-                  </button>
+                  <>
+                    <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('history'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'history' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                      <History className={`w-5 h-5 ${activeTab === 'history' ? 'text-recloud-400' : 'text-slate-400'}`} /> Recycle Bin
+                    </button>
+                    <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('api'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'api' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                      <Settings className={`w-5 h-5 ${activeTab === 'api' ? 'text-recloud-400' : 'text-slate-400'}`} /> API Settings
+                    </button>
+                    <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('backend'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'backend' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                      <Database className={`w-5 h-5 ${activeTab === 'backend' ? 'text-recloud-400' : 'text-slate-400'}`} /> Backend Manager
+                    </button>
+                    <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('webhooks'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'webhooks' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                      <Webhook className={`w-5 h-5 ${activeTab === 'webhooks' ? 'text-recloud-400' : 'text-slate-400'}`} /> Webhooks
+                    </button>
+                  </>
                 )}
                 <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('ai'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'ai' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner' : 'hover:bg-slate-800/50 hover:text-white'}`}>
                   <Sparkles className="w-5 h-5 text-purple-400" /> AI Assistant
@@ -1357,7 +1571,7 @@ export default function App() {
               </button>
               )}
 
-            {['distributor', 'sales_rep', 'b2b_customer'].includes(currentUser.role) && (
+            {['distributor', 'sales_rep', 'b2b_customer'].includes(currentUser.role) && isModuleEnabled('b2b') && (
               <button onClick={() => { setIsMobileMenuOpen(false); setActiveTab('b2b'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'b2b' ? 'bg-recloud-500/20 text-recloud-300 shadow-inner border border-recloud-500/20' : 'hover:bg-slate-800/50 hover:text-white'}`}>
                 <Package className="w-5 h-5" /> B2B Order Portal
               </button>
@@ -1496,34 +1710,36 @@ export default function App() {
                     <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-indigo-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-indigo-900/10 transition-all duration-300 group-hover:scale-105">
                       <LayoutDashboard className="w-7 h-7 md:w-10 md:h-10 text-indigo-500" />
                     </div>
-                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-indigo-600 transition-colors">Dashboard</span>
+                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-indigo-600 transition-colors text-center leading-tight">Dashboard</span>
                   </div>
                 )}
 
-                {['admin', 'sales_manager'].includes(currentUser.role) && (
+                {['admin', 'sales_manager'].includes(currentUser.role) && isModuleEnabled('crm') && (
                   <div onClick={() => setActiveTab('crm')} className="group flex flex-col items-center gap-2 md:gap-4 cursor-pointer">
                     <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-pink-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-pink-900/10 transition-all duration-300 group-hover:scale-105">
                       <Building2 className="w-7 h-7 md:w-10 md:h-10 text-pink-500" />
                     </div>
-                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-pink-600 transition-colors">CRM</span>
+                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-pink-600 transition-colors text-center leading-tight">
+                      {currentIndustry === 'law_firm' ? 'Client Intake' : 'CRM'}
+                    </span>
                   </div>
                 )}
 
-                {['admin', 'inventory_manager'].includes(currentUser.role) && (
+                {['admin', 'inventory_manager'].includes(currentUser.role) && isModuleEnabled('inventory') && (
                   <div onClick={() => setActiveTab('inventory')} className="group flex flex-col items-center gap-2 md:gap-4 cursor-pointer">
                     <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-orange-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-orange-900/10 transition-all duration-300 group-hover:scale-105">
                       <Package className="w-7 h-7 md:w-10 md:h-10 text-orange-500" />
                     </div>
-                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-orange-600 transition-colors">Inventory</span>
+                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-orange-600 transition-colors text-center leading-tight">Inventory</span>
                   </div>
                 )}
 
-                {['admin', 'sales_manager', 'cashier', 'sales_rep'].includes(currentUser.role) && (
+                {['admin', 'sales_manager', 'cashier', 'sales_rep'].includes(currentUser.role) && isModuleEnabled('pos') && (
                   <div onClick={() => setActiveTab('pos')} className="group flex flex-col items-center gap-2 md:gap-4 cursor-pointer">
                     <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-emerald-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-emerald-900/10 transition-all duration-300 group-hover:scale-105">
                       <Banknote className="w-7 h-7 md:w-10 md:h-10 text-emerald-500" />
                     </div>
-                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-emerald-600 transition-colors">POS</span>
+                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-emerald-600 transition-colors text-center leading-tight">POS</span>
                   </div>
                 )}
 
@@ -1532,7 +1748,7 @@ export default function App() {
                     <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-blue-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-blue-900/10 transition-all duration-300 group-hover:scale-105">
                       <Receipt className="w-7 h-7 md:w-10 md:h-10 text-blue-500" />
                     </div>
-                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-blue-600 transition-colors">Accounting</span>
+                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-blue-600 transition-colors text-center leading-tight">Accounting</span>
                   </div>
                 )}
 
@@ -1541,7 +1757,7 @@ export default function App() {
                     <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-purple-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-purple-900/10 transition-all duration-300 group-hover:scale-105">
                       <Users className="w-7 h-7 md:w-10 md:h-10 text-purple-500" />
                     </div>
-                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-purple-600 transition-colors">HR</span>
+                    <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-purple-600 transition-colors text-center leading-tight">HR</span>
                   </div>
                 )}
 
@@ -1551,21 +1767,23 @@ export default function App() {
                     <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-white"></div>
                     <MessageCircle className="w-7 h-7 md:w-10 md:h-10 text-sky-500" />
                   </div>
-                  <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-sky-600 transition-colors">Discuss</span>
+                  <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-sky-600 transition-colors text-center leading-tight">Discuss</span>
                 </div>
 
                 <div onClick={() => setActiveTab('documents')} className="group flex flex-col items-center gap-2 md:gap-4 cursor-pointer">
                   <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-amber-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-amber-900/10 transition-all duration-300 group-hover:scale-105">
                     <FolderOpen className="w-7 h-7 md:w-10 md:h-10 text-amber-500" />
                   </div>
-                  <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-amber-600 transition-colors">Documents</span>
+                  <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-amber-600 transition-colors text-center leading-tight">Documents</span>
                 </div>
 
                 <div onClick={() => setActiveTab('projects')} className="group flex flex-col items-center gap-2 md:gap-4 cursor-pointer">
                   <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-[2rem] bg-white/70 backdrop-blur-xl shadow-xl shadow-teal-900/5 flex items-center justify-center border border-white/50 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-teal-900/10 transition-all duration-300 group-hover:scale-105">
                     <Kanban className="w-7 h-7 md:w-10 md:h-10 text-teal-500" />
                   </div>
-                  <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-teal-600 transition-colors">Projects</span>
+                  <span className="font-bold text-xs md:text-base text-slate-700 group-hover:text-teal-600 transition-colors text-center leading-tight">
+                    {currentIndustry === 'law_firm' ? 'Cases & Matters' : 'Projects'}
+                  </span>
                 </div>
 
                 {['admin', 'super_admin'].includes(currentUser.role) && (
@@ -2148,6 +2366,14 @@ export default function App() {
                         <label className="block text-sm font-bold text-slate-700 mb-2">Contact Phone Number</label>
                         <input type="text" value={settingsForm.phone} onChange={e => setSettingsForm({...settingsForm, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="+1 (555) 123-4567" />
                       </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Industry / App Mode</label>
+                        <select value={settingsForm.industry} onChange={e => setSettingsForm({...settingsForm, industry: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all">
+                          <option value="retail">Retail & General</option>
+                          <option value="law_firm">Law Firm & Legal Practice</option>
+                        </select>
+                        <p className="text-xs text-slate-500 mt-1">This setting adjusts the available modules and terminology to match your business.</p>
+                      </div>
                       <div className="pt-6 mt-6 border-t border-slate-200">
                         <h4 className="text-lg font-bold text-slate-800 mb-4">Payment & Bank Details</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2483,6 +2709,8 @@ export default function App() {
                   customers={customers}
                   products={products}
                   employees={employees}
+                  invoices={invoices}
+                  currentIndustry={currentIndustry}
                 />
               </div>
             )}
@@ -2490,7 +2718,7 @@ export default function App() {
             {activeTab === 'accounting' && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><AccountingModule 
-                  ledger={ledger} expenses={expenses} sales={sales} b2bOrders={b2bOrders} purchaseOrders={purchaseOrders} invoices={invoices} payslips={payslips} currentTenant={currentTenant} currentUser={currentUser} refreshData={() => fetchData(currentTenant)}
+                  ledger={ledger} expenses={expenses} sales={sales} b2bOrders={b2bOrders} purchaseOrders={purchaseOrders} invoices={invoices} payslips={payslips} currentTenant={currentTenant} currentUser={currentUser} currentIndustry={currentIndustry} refreshData={() => fetchData(currentTenant)}
                 /></ErrorBoundary>
               </div>
             )}
@@ -2506,12 +2734,12 @@ export default function App() {
             {activeTab === 'crm' && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><CrmModule 
-                  customers={customers} deals={deals} invoices={invoices} employees={employees} currentTenant={currentTenant} tenantConfig={tenantConfig} currentUser={currentUser} refreshData={() => fetchData(currentTenant)}
+                  customers={customers} deals={deals} invoices={invoices} employees={employees} currentTenant={currentTenant} tenantConfig={tenantConfig} currentUser={currentUser} currentIndustry={currentIndustry} refreshData={() => fetchData(currentTenant)}
                 /></ErrorBoundary>
               </div>
             )}
 
-            {activeTab === 'inventory' && (
+            {activeTab === 'inventory' && isModuleEnabled('inventory') && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><InventoryModule 
                   products={products} stockMovements={stockMovements} warehouses={warehouses} suppliers={suppliers} purchaseOrders={purchaseOrders} branchOrders={branchOrders} employees={employees} currentUser={currentUser} currentTenant={currentTenant} b2bOrders={b2bOrders} refreshData={() => fetchData(currentTenant)}
@@ -2519,7 +2747,7 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'pos' && (
+            {activeTab === 'pos' && isModuleEnabled('pos') && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><PosModule 
                   products={products} customers={customers} sales={sales} warehouses={warehouses} currentTenant={currentTenant} tenantConfig={tenantConfig} currentUser={currentUser} refreshData={() => fetchData(currentTenant)}
@@ -2527,7 +2755,7 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'b2b' && (
+            {activeTab === 'b2b' && isModuleEnabled('b2b') && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
                 <ErrorBoundary><B2bOrderModule 
                   currentUser={currentUser} products={products} currentTenant={currentTenant} tenantConfig={tenantConfig}
@@ -2549,7 +2777,13 @@ export default function App() {
 
             {activeTab === 'projects' && ['admin', 'hr_manager', 'sales_manager', 'inventory_manager', 'accountant', 'staff'].includes(currentUser.role) && (
               <div className="flex flex-col flex-1 w-full bg-slate-50 p-0 overflow-hidden rounded-2xl shadow-sm border border-slate-200">
-                <ErrorBoundary><ProjectsModule currentUser={currentUser} currentTenant={currentTenant} customers={customers} /></ErrorBoundary>
+                <ErrorBoundary>
+                  {currentIndustry === 'law_firm' ? (
+                    <LawModule currentUser={currentUser} currentTenant={currentTenant} customers={customers} />
+                  ) : (
+                    <ProjectsModule currentUser={currentUser} currentTenant={currentTenant} customers={customers} currentIndustry={currentIndustry} />
+                  )}
+                </ErrorBoundary>
               </div>
             )}
 
@@ -2557,6 +2791,24 @@ export default function App() {
             {activeTab === 'history' && currentUser?.role === 'admin' && (
               <React.Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
                 <ErrorBoundary><HistoryModule currentTenant={currentTenant} /></ErrorBoundary>
+              </React.Suspense>
+            )}
+
+            {activeTab === 'api' && currentUser?.role === 'admin' && (
+              <React.Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+                <ErrorBoundary><ApiSettingsModule currentTenant={currentTenant} /></ErrorBoundary>
+              </React.Suspense>
+            )}
+
+            {activeTab === 'backend' && ['admin', 'super_admin'].includes(currentUser?.role) && (
+              <React.Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+                <ErrorBoundary><BackendModule currentTenant={currentTenant} currentUser={currentUser} /></ErrorBoundary>
+              </React.Suspense>
+            )}
+
+            {activeTab === 'webhooks' && ['admin', 'super_admin'].includes(currentUser?.role) && (
+              <React.Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+                <ErrorBoundary><WebhookModule currentTenant={currentTenant} /></ErrorBoundary>
               </React.Suspense>
             )}
 {activeTab === 'ai' && (
@@ -2817,14 +3069,14 @@ export default function App() {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">System Role</label>
                   <select required value={newEmployee.role} onChange={e => setNewEmployee({...newEmployee, role: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none bg-white">
                     <option value="staff">Standard Staff (ESS Only)</option>
-                    <option value="cashier">Cashier (POS Only)</option>
-                    <option value="distributor">Distributor / Partner</option>
-                    <option value="sales_rep">Field Sales Rep</option>
-                    <option value="b2b_customer">Wholesale Customer</option>
+                    {currentIndustry !== 'law_firm' && <option value="cashier">Cashier (POS Only)</option>}
+                    {currentIndustry !== 'law_firm' && <option value="distributor">Distributor / Partner</option>}
+                    {currentIndustry !== 'law_firm' && <option value="sales_rep">Field Sales Rep</option>}
+                    {currentIndustry !== 'law_firm' && <option value="b2b_customer">Wholesale Customer</option>}
                     <option value="client">Client (Service Portal)</option>
                     <option value="hr_manager">HR Manager</option>
-                    <option value="sales_manager">Sales Manager (CRM)</option>
-                    <option value="inventory_manager">Inventory Manager</option>
+                    {currentIndustry !== 'law_firm' && <option value="sales_manager">Sales Manager (CRM)</option>}
+                    {currentIndustry !== 'law_firm' && <option value="inventory_manager">Inventory Manager</option>}
                     <option value="accountant">Accountant (Tax)</option>
                     <option value="admin">System Administrator</option>
                   </select>
@@ -2866,7 +3118,7 @@ export default function App() {
                   <input type="password" value={newEmployee.password || ''} onChange={e => setNewEmployee({...newEmployee, password: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none" placeholder="Leave blank for none"/>
                 </div>
               </div>
-              {['distributor', 'sales_rep', 'b2b_customer'].includes(newEmployee.role) && (
+              {currentIndustry !== 'law_firm' && ['distributor', 'sales_rep', 'b2b_customer'].includes(newEmployee.role) && (
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Credit Limit (₦)</label>
                   <input required type="number" value={newEmployee.creditLimit} onChange={e => setNewEmployee({...newEmployee, creditLimit: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none" placeholder="e.g. 500000"/>
@@ -2926,14 +3178,14 @@ export default function App() {
                       <input type="text" value={editedProfile.name} onChange={e => setEditedProfile({...editedProfile, name: e.target.value})} className="w-full border-b border-slate-300 text-xl font-bold text-slate-800 bg-transparent focus:outline-none focus:border-recloud-500" placeholder="Full Name"/>
                       <select value={editedProfile.role || 'staff'} onChange={e => setEditedProfile({...editedProfile, role: e.target.value})} className="w-full border-b border-slate-300 text-sm font-semibold text-recloud-600 bg-transparent focus:outline-none focus:border-recloud-500 pb-1">
                         <option value="staff">Standard Staff (ESS Only)</option>
-                        <option value="cashier">Cashier (POS Only)</option>
-                        <option value="distributor">Distributor / Partner</option>
-                        <option value="sales_rep">Field Sales Rep</option>
-                        <option value="b2b_customer">Wholesale Customer</option>
-                    <option value="client">Client (Service Portal)</option>
+                        {currentIndustry !== 'law_firm' && <option value="cashier">Cashier (POS Only)</option>}
+                        {currentIndustry !== 'law_firm' && <option value="distributor">Distributor / Partner</option>}
+                        {currentIndustry !== 'law_firm' && <option value="sales_rep">Field Sales Rep</option>}
+                        {currentIndustry !== 'law_firm' && <option value="b2b_customer">Wholesale Customer</option>}
+                        <option value="client">Client (Service Portal)</option>
                         <option value="hr_manager">HR Manager</option>
-                        <option value="sales_manager">Sales Manager (CRM)</option>
-                        <option value="inventory_manager">Inventory Manager</option>
+                        {currentIndustry !== 'law_firm' && <option value="sales_manager">Sales Manager (CRM)</option>}
+                        {currentIndustry !== 'law_firm' && <option value="inventory_manager">Inventory Manager</option>}
                         <option value="accountant">Accountant (Tax)</option>
                         <option value="admin">System Administrator</option>
                       </select>

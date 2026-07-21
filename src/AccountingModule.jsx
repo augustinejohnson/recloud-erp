@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { 
   DollarSign, TrendingUp, TrendingDown, FileText, CheckCircle2, XCircle, Calculator, Package, AlertTriangle 
 } from 'lucide-react';
-import { addExpense, updateExpense, getContracts, addContract, updateContract, deleteContract, addInvoice } from './firebase';
-import { PlusCircle, RefreshCw } from 'lucide-react';
+import { addExpense, updateExpense, getContracts, addContract, updateContract, deleteContract, addInvoice, addLedgerEntry, getTimeEntries, updateTimeEntry } from './firebase';
+import { PlusCircle, RefreshCw, Landmark, ArrowRightLeft, Trash2 } from 'lucide-react';
 
 export default function AccountingModule({ 
   ledger = [], 
@@ -15,6 +15,7 @@ export default function AccountingModule({
   payslips = [],
   currentTenant,
   currentUser,
+  currentIndustry,
   refreshData
 }) {
   const isAdminOrAccountant = ['admin', 'super_admin', 'accountant'].includes(currentUser?.role);
@@ -35,7 +36,50 @@ export default function AccountingModule({
     if (activeTab === 'contracts' && isAdminOrAccountant) {
       loadContracts();
     }
-  }, [activeTab, currentTenant]);
+    if (activeTab === 'arap' && currentIndustry === 'law_firm') {
+      loadUnbilledTime();
+    }
+  }, [activeTab, currentTenant, currentIndustry]);
+
+  const [unbilledTimeEntries, setUnbilledTimeEntries] = useState([]);
+  const loadUnbilledTime = async () => {
+    try {
+      const entries = await getTimeEntries(currentTenant);
+      setUnbilledTimeEntries(entries.filter(e => !e.billed));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleGenerateInvoiceFromTime = async (projectId) => {
+    const entries = unbilledTimeEntries.filter(e => e.projectId === projectId);
+    if(entries.length === 0) return;
+    const totalAmount = entries.reduce((s, e) => s + (e.hours * e.rate), 0);
+    const invoiceData = {
+      clientId: entries[0].clientId || '',
+      customerName: entries[0].projectName,
+      date: new Date().toLocaleDateString('en-US'),
+      dueDate: new Date(Date.now() + 14 * 86400000).toLocaleDateString('en-US'),
+      items: entries.map(e => ({ name: `${e.description} (${e.date})`, qty: e.hours, unitPrice: e.rate })),
+      amount: totalAmount,
+      status: 'Sent',
+      type: 'invoice',
+      notes: `Generated for Case: ${entries[0].projectName}`
+    };
+    
+    try {
+      await addInvoice(invoiceData, currentTenant);
+      for (const e of entries) {
+        await updateTimeEntry(e.id, { billed: true }, currentTenant);
+      }
+      loadUnbilledTime();
+      refreshData();
+      alert("Invoice generated successfully.");
+    } catch(err) {
+      console.error(err);
+      alert("Failed to generate invoice.");
+    }
+  };
 
   const loadContracts = async () => {
     setIsContractsLoading(true);
@@ -81,15 +125,18 @@ export default function AccountingModule({
   const totalCOGS = posCogsTotal + b2bCogsTotal;
   const grossProfit = totalGrossRevenue - totalCOGS;
 
+  const operatingLedger = ledger.filter(l => l.accountType !== 'trust');
+  const trustLedger = ledger.filter(l => l.accountType === 'trust');
+
   const approvedExpenses = expenses.filter(e => e.status === 'Approved').reduce((sum, e) => sum + Number(e.amount), 0);
-  const ledgerExpenses = ledger.filter(l => l.type === 'Expense').reduce((sum, l) => sum + Number(l.amount), 0);
+  const ledgerExpenses = operatingLedger.filter(l => l.type === 'Expense').reduce((sum, l) => sum + Number(l.amount), 0);
   const payrollExpenses = (payslips || []).filter(p => p.status === 'Paid').reduce((sum, p) => sum + Number(p.netPay || 0), 0);
 
   const totalOperatingExpenses = approvedExpenses + ledgerExpenses + payrollExpenses;
   
   const netIncome = grossProfit - totalOperatingExpenses;
   
-  const totalTaxCollected = sales.reduce((sum, s) => sum + Number(s.taxAmount || 0), 0) + ledger.reduce((sum, l) => sum + Number(l.taxCollected || 0), 0);
+  const totalTaxCollected = sales.reduce((sum, s) => sum + Number(s.taxAmount || 0), 0) + operatingLedger.reduce((sum, l) => sum + Number(l.taxCollected || 0), 0);
 
   // Derived Data for AR / AP
   const b2bReceivable = b2bOrders.filter(o => o.paymentStatus !== 'paid' && o.status !== 'rejected').reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
@@ -157,36 +204,43 @@ export default function AccountingModule({
           <span className="font-bold text-slate-600 uppercase tracking-wider">Gross Revenue</span>
           <span className="text-xl font-black text-slate-800">₦{totalGrossRevenue.toLocaleString()}</span>
         </div>
-        <div className="p-4 flex justify-between items-center border-b border-slate-100 pl-10 bg-white">
-          <span className="text-slate-600 font-medium">POS Retail Sales</span>
-          <span className="font-bold text-slate-800">₦{posSalesTotal.toLocaleString()}</span>
-        </div>
-        <div className="p-4 flex justify-between items-center border-b border-slate-100 pl-10 bg-white">
-          <span className="text-slate-600 font-medium">B2B Wholesale Orders</span>
-          <span className="font-bold text-slate-800">₦{b2bSalesTotal.toLocaleString()}</span>
-        </div>
+        {currentIndustry !== 'law_firm' && (
+          <>
+            <div className="p-4 flex justify-between items-center border-b border-slate-100 pl-10 bg-white">
+              <span className="text-slate-600 font-medium">POS Retail Sales</span>
+              <span className="font-bold text-slate-800">₦{posSalesTotal.toLocaleString()}</span>
+            </div>
+            <div className="p-4 flex justify-between items-center border-b border-slate-100 pl-10 bg-white">
+              <span className="text-slate-600 font-medium">B2B Wholesale Orders</span>
+              <span className="font-bold text-slate-800">₦{b2bSalesTotal.toLocaleString()}</span>
+            </div>
+          </>
+        )}
         <div className="p-4 flex justify-between items-center border-b border-slate-200 pl-10 bg-white">
           <span className="text-slate-600 font-medium">CRM Invoices (Paid)</span>
           <span className="font-bold text-slate-800">₦{crmSalesTotal.toLocaleString()}</span>
         </div>
 
-        <div className="p-6 border-b border-slate-200 bg-red-50/30 flex justify-between items-center">
-          <span className="font-bold text-slate-600 uppercase tracking-wider">Cost of Goods Sold (COGS)</span>
-          <span className="text-xl font-black text-red-600">-₦{totalCOGS.toLocaleString()}</span>
-        </div>
-        <div className="p-4 flex justify-between items-center border-b border-slate-100 pl-10 bg-white">
-          <span className="text-slate-600 font-medium">POS Inventory Cost</span>
-          <span className="font-bold text-slate-800">₦{posCogsTotal.toLocaleString()}</span>
-        </div>
-        <div className="p-4 flex justify-between items-center border-b border-slate-200 pl-10 bg-white">
-          <span className="text-slate-600 font-medium">B2B Inventory Cost</span>
-          <span className="font-bold text-slate-800">₦{b2bCogsTotal.toLocaleString()}</span>
-        </div>
-
-        <div className="p-6 border-b border-slate-200 bg-emerald-50/50 flex justify-between items-center">
-          <span className="font-black text-emerald-800 text-lg uppercase tracking-wider">Gross Profit</span>
-          <span className="text-2xl font-black text-emerald-600">₦{grossProfit.toLocaleString()}</span>
-        </div>
+        {currentIndustry !== 'law_firm' && (
+          <>
+            <div className="p-6 border-b border-slate-200 bg-red-50/30 flex justify-between items-center">
+              <span className="font-bold text-slate-600 uppercase tracking-wider">Cost of Goods Sold (COGS)</span>
+              <span className="text-xl font-black text-red-600">-₦{totalCOGS.toLocaleString()}</span>
+            </div>
+            <div className="p-4 flex justify-between items-center border-b border-slate-100 pl-10 bg-white">
+              <span className="text-slate-600 font-medium">POS Inventory Cost</span>
+              <span className="font-bold text-slate-800">₦{posCogsTotal.toLocaleString()}</span>
+            </div>
+            <div className="p-4 flex justify-between items-center border-b border-slate-200 pl-10 bg-white">
+              <span className="text-slate-600 font-medium">B2B Inventory Cost</span>
+              <span className="font-bold text-slate-800">₦{b2bCogsTotal.toLocaleString()}</span>
+            </div>
+            <div className="p-6 border-b border-slate-200 bg-emerald-50/50 flex justify-between items-center">
+              <span className="font-black text-emerald-800 text-lg uppercase tracking-wider">Gross Profit</span>
+              <span className="text-2xl font-black text-emerald-600">₦{grossProfit.toLocaleString()}</span>
+            </div>
+          </>
+        )}
 
         <div className="p-6 border-b border-slate-200 bg-orange-50/30 flex justify-between items-center">
           <span className="font-bold text-slate-600 uppercase tracking-wider">Operating Expenses</span>
@@ -224,7 +278,7 @@ export default function AccountingModule({
           <p className="text-sm text-slate-500 mb-4">Money owed to you by customers (Unpaid B2B Orders).</p>
           <h2 className="text-4xl font-black text-blue-600 mb-6">₦{accountsReceivable.toLocaleString()}</h2>
           <div className="border-t border-slate-100 pt-4 overflow-y-auto max-h-64 pr-2">
-            {b2bOrders.filter(o => o.paymentStatus !== 'paid' && o.status !== 'rejected').map(order => (
+            {currentIndustry !== 'law_firm' && b2bOrders.filter(o => o.paymentStatus !== 'paid' && o.status !== 'rejected').map(order => (
               <div key={order.id} className="flex justify-between items-center py-3 border-b border-slate-50 last:border-0">
                 <div>
                   <p className="font-bold text-slate-800 text-sm">{order.userName || 'B2B Customer'}</p>
@@ -236,7 +290,19 @@ export default function AccountingModule({
                 </div>
               </div>
             ))}
-            {b2bOrders.filter(o => o.paymentStatus !== 'paid' && o.status !== 'rejected').length === 0 && (
+            {currentIndustry === 'law_firm' && (invoices || []).filter(i => i.status === 'Sent' || i.status === 'Overdue').map(inv => (
+              <div key={inv.id} className="flex justify-between items-center py-3 border-b border-slate-50 last:border-0">
+                <div>
+                  <p className="font-bold text-slate-800 text-sm">{inv.customerName}</p>
+                  <p className="text-xs font-mono text-slate-400">{inv.invoiceNumber || inv.id.slice(-6).toUpperCase()}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-slate-800 text-sm">₦{Number(inv.amount).toLocaleString()}</p>
+                  <p className="text-xs font-bold text-amber-600">{inv.status}</p>
+                </div>
+              </div>
+            ))}
+            {((currentIndustry !== 'law_firm' && b2bOrders.filter(o => o.paymentStatus !== 'paid' && o.status !== 'rejected').length === 0) || (currentIndustry === 'law_firm' && (invoices || []).filter(i => i.status === 'Sent' || i.status === 'Overdue').length === 0)) && (
               <p className="text-sm text-slate-400 text-center py-4 font-medium">All invoices are paid.</p>
             )}
           </div>
@@ -268,6 +334,34 @@ export default function AccountingModule({
           </div>
         </div>
       </div>
+
+      {currentIndustry === 'law_firm' && (
+        <div className="bg-white/70 backdrop-blur-xl p-8 rounded-3xl shadow-xl shadow-slate-900/5 border border-white/50 mt-8">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">Unbilled Time (Ready for Invoicing)</h3>
+          {unbilledTimeEntries.length === 0 ? (
+            <p className="text-sm text-slate-500 font-medium">No unbilled time entries.</p>
+          ) : (
+            <div className="space-y-4">
+              {Object.entries(unbilledTimeEntries.reduce((acc, curr) => {
+                if(!acc[curr.projectId]) acc[curr.projectId] = { projectName: curr.projectName, entries: [], total: 0 };
+                acc[curr.projectId].entries.push(curr);
+                acc[curr.projectId].total += (curr.hours * curr.rate);
+                return acc;
+              }, {})).map(([projectId, data]) => (
+                <div key={projectId} className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                  <div>
+                    <h4 className="font-bold text-slate-800">{data.projectName}</h4>
+                    <p className="text-xs text-slate-500">{data.entries.length} entries totaling ₦{data.total.toLocaleString()}</p>
+                  </div>
+                  <button onClick={() => handleGenerateInvoiceFromTime(projectId)} className="bg-recloud-600 hover:bg-recloud-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-recloud-500/20 transition-all flex items-center gap-2">
+                    <FileText className="w-4 h-4"/> Generate Invoice
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -290,7 +384,7 @@ export default function AccountingModule({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {ledger.sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
+            {operatingLedger.sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
               <tr key={entry.id} className="hover:bg-slate-50">
                 <td className="px-6 py-4 text-slate-600">{new Date(entry.date).toLocaleString()}</td>
                 <td className="px-6 py-4 font-mono text-xs text-slate-400">{entry.referenceId || '-'}</td>
@@ -304,8 +398,119 @@ export default function AccountingModule({
                 <td className="px-6 py-4 text-slate-500">{entry.createdBy}</td>
               </tr>
             ))}
-            {ledger.length === 0 && (
+            {operatingLedger.length === 0 && (
               <tr><td colSpan="6" className="p-8 text-center text-slate-500">No ledger entries found.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const trustBalance = trustLedger.reduce((sum, l) => sum + (l.type === 'Revenue' ? Number(l.amount) : -Number(l.amount)), 0);
+
+  const renderTrustAccounts = () => (
+    <div className="space-y-6 animate-in fade-in relative z-10">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3"><Landmark className="w-8 h-8 text-emerald-600"/> Trust Accounting</h2>
+          <p className="text-slate-500 font-medium text-sm">Strictly separate client retainers from firm operating funds.</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={async () => {
+            const client = prompt("Client Name (for Retainer):");
+            if (!client) return;
+            const amount = parseFloat(prompt("Deposit Amount (₦):"));
+            if (amount) {
+              await addLedgerEntry({
+                description: `Retainer Deposit - ${client}`,
+                type: 'Revenue',
+                amount: amount,
+                date: new Date().toISOString(),
+                accountType: 'trust',
+                createdBy: currentUser?.name || 'Admin'
+              }, currentTenant);
+              refreshData();
+            }
+          }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-all hover:-translate-y-0.5">
+            <PlusCircle className="w-4 h-4"/> Log Trust Deposit
+          </button>
+          
+          <button onClick={async () => {
+            if (trustBalance <= 0) return alert("No funds in Trust Account.");
+            const amount = parseFloat(prompt(`Transfer Amount (Max ₦${trustBalance.toLocaleString()}):`));
+            if (amount && amount <= trustBalance) {
+               // Deduct from Trust
+               await addLedgerEntry({
+                 description: `Transfer to Operating - Earned Fees`,
+                 type: 'Expense',
+                 amount: amount,
+                 date: new Date().toISOString(),
+                 accountType: 'trust',
+                 createdBy: currentUser?.name || 'Admin'
+               }, currentTenant);
+               // Add to Operating
+               await addLedgerEntry({
+                 description: `Transfer from Trust - Earned Fees`,
+                 type: 'Revenue',
+                 amount: amount,
+                 date: new Date().toISOString(),
+                 accountType: 'operating',
+                 createdBy: currentUser?.name || 'Admin'
+               }, currentTenant);
+               refreshData();
+            } else if (amount > trustBalance) {
+               alert("Insufficient Trust funds.");
+            }
+          }} className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm flex items-center gap-2 hover:bg-slate-50 transition-all">
+            <ArrowRightLeft className="w-4 h-4"/> Transfer to Operating
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white/70 backdrop-blur-xl p-10 rounded-3xl shadow-xl shadow-emerald-900/5 border border-white/50 flex flex-col md:flex-row gap-8 mb-6">
+        <div className="flex-1 bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
+          <p className="text-emerald-700 font-bold uppercase tracking-wider text-xs mb-1">Total Trust Liability</p>
+          <h3 className="text-5xl font-black text-emerald-600">₦{trustBalance.toLocaleString()}</h3>
+          <p className="text-emerald-600/70 text-sm mt-2 font-medium">Unearned client funds held in trust.</p>
+        </div>
+        <div className="flex-1 bg-blue-50 rounded-2xl p-6 border border-blue-100">
+          <p className="text-blue-700 font-bold uppercase tracking-wider text-xs mb-1">Total Operating Revenue</p>
+          <h3 className="text-5xl font-black text-blue-600">₦{totalGrossRevenue.toLocaleString()}</h3>
+          <p className="text-blue-600/70 text-sm mt-2 font-medium">Earned funds available for firm operations.</p>
+        </div>
+      </div>
+
+      <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-xl border border-white/50 overflow-hidden">
+        <div className="p-6 border-b border-slate-100 bg-white">
+          <h3 className="font-bold text-slate-800">Trust Ledger Activity</h3>
+        </div>
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-slate-500 font-bold">
+            <tr>
+              <th className="px-6 py-4">Date</th>
+              <th className="px-6 py-4">Description</th>
+              <th className="px-6 py-4">Action</th>
+              <th className="px-6 py-4">Amount</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {trustLedger.sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
+              <tr key={entry.id} className="hover:bg-slate-50">
+                <td className="px-6 py-4 text-slate-600">{new Date(entry.date).toLocaleString()}</td>
+                <td className="px-6 py-4 text-slate-800 font-medium">{entry.description}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${entry.type === 'Revenue' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                    {entry.type === 'Revenue' ? 'Deposit' : 'Transfer Out'}
+                  </span>
+                </td>
+                <td className={`px-6 py-4 font-black ${entry.type === 'Revenue' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                  {entry.type === 'Revenue' ? '+' : '-'}₦{Number(entry.amount).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+            {trustLedger.length === 0 && (
+              <tr><td colSpan="4" className="p-8 text-center text-slate-500">No trust activity found.</td></tr>
             )}
           </tbody>
         </table>
@@ -323,11 +528,26 @@ export default function AccountingModule({
         <div className="flex gap-3">
           <button onClick={async () => {
             const name = prompt("Client Name:");
+            if (!name) return;
             const service = prompt("Service Name:");
-            const amount = parseFloat(prompt("Monthly Amount (₦):"));
-            if (name && service && amount) {
+            if (!service) return;
+            const amountStr = prompt("Monthly Amount (₦):");
+            if (!amountStr) return;
+            
+            // Clean up the string to remove commas before parsing
+            const amount = parseFloat(amountStr.replace(/,/g, ''));
+            if (isNaN(amount) || amount <= 0) {
+              alert("Please enter a valid numeric amount (e.g. 50000).");
+              return;
+            }
+            
+            try {
               await addContract({ customerName: name, serviceName: service, amount, status: 'Active' }, currentTenant);
               loadContracts();
+              alert("Contract created successfully!");
+            } catch (err) {
+              console.error(err);
+              alert("Failed to create contract: " + err.message);
             }
           }} className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 flex items-center gap-2">
             <PlusCircle className="w-4 h-4" /> New Contract
@@ -365,12 +585,22 @@ export default function AccountingModule({
                   </span>
                 </td>
                 <td className="p-4 text-right">
-                  <button onClick={async () => {
-                    if(confirm("Cancel this contract?")) {
-                      await updateContract(c.id, { status: 'Cancelled' }, currentTenant);
-                      loadContracts();
-                    }
-                  }} className="text-red-500 hover:text-red-700 text-xs font-bold bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors">Cancel</button>
+                  <div className="flex items-center justify-end gap-2">
+                    {c.status === 'Active' && (
+                      <button onClick={async () => {
+                        if(confirm("Cancel this contract?")) {
+                          await updateContract(c.id, { status: 'Cancelled' }, currentTenant);
+                          loadContracts();
+                        }
+                      }} className="text-orange-500 hover:text-orange-700 text-xs font-bold bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition-colors">Cancel</button>
+                    )}
+                    <button onClick={async () => {
+                      if(confirm("Delete this contract permanently?")) {
+                        await deleteContract(c.id, currentTenant);
+                        loadContracts();
+                      }
+                    }} className="text-red-500 hover:text-red-700 text-xs font-bold bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5 inline-block mb-0.5" /> Delete</button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -489,19 +719,23 @@ export default function AccountingModule({
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-400/10 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-400/10 rounded-full blur-[120px] pointer-events-none"></div>
       
-      <div className="glass border-b border-white/50 px-8 py-4 flex-shrink-0 z-10 flex justify-between items-center sticky top-0">
-        <div className="flex gap-4">
-          {isAdminOrAccountant && <button onClick={() => setActiveTab('pl')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'pl' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>P&L Statement</button>}
-          {isAdminOrAccountant && <button onClick={() => setActiveTab('arap')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'arap' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>AR/AP Tracker</button>}
-          {isAdminOrAccountant && <button onClick={() => setActiveTab('ledger')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'ledger' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>General Ledger</button>}
-          {isAdminOrAccountant && <button onClick={() => setActiveTab('contracts')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'contracts' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Service Contracts</button>}
-          <button onClick={() => setActiveTab('expenses')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'expenses' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Expenses</button>
-          {isAdminOrAccountant && <button onClick={() => setActiveTab('taxes')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'taxes' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Taxes</button>}
+      <div className="glass border-b border-white/50 px-4 md:px-8 py-4 flex-shrink-0 z-10 flex flex-col md:flex-row justify-between items-start md:items-center sticky top-0 gap-4">
+        <div className="flex gap-2 md:gap-4 overflow-x-auto no-scrollbar w-full md:w-auto pb-1 md:pb-0">
+          {isAdminOrAccountant && <button onClick={() => setActiveTab('pl')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'pl' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>P&L Statement</button>}
+          {isAdminOrAccountant && currentIndustry === 'law_firm' && (
+            <button onClick={() => setActiveTab('trust')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'trust' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Trust Accounts</button>
+          )}
+          {isAdminOrAccountant && <button onClick={() => setActiveTab('arap')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'arap' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>AR/AP Tracker</button>}
+          {isAdminOrAccountant && <button onClick={() => setActiveTab('ledger')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'ledger' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>General Ledger</button>}
+          {isAdminOrAccountant && <button onClick={() => setActiveTab('contracts')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'contracts' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Service Contracts</button>}
+          <button onClick={() => setActiveTab('expenses')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'expenses' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Expenses</button>
+          {isAdminOrAccountant && <button onClick={() => setActiveTab('taxes')} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'taxes' ? 'bg-recloud-600 text-white shadow-md shadow-recloud-500/20' : 'text-slate-600 hover:bg-white/50'}`}>Taxes</button>}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-8 relative z-10 scrollbar-hide">
         {activeTab === 'pl' && isAdminOrAccountant && renderPLStatement()}
+        {activeTab === 'trust' && isAdminOrAccountant && renderTrustAccounts()}
         {activeTab === 'arap' && isAdminOrAccountant && renderARAP()}
         {activeTab === 'ledger' && isAdminOrAccountant && renderLedger()}
         {activeTab === 'contracts' && isAdminOrAccountant && renderContracts()}

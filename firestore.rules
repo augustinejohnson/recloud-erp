@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if the user exists as an employee in this specific tenant
+    function isTenantMember(tenantId) {
+      return exists(/databases/$(database)/documents/organizations/$(tenantId)/employees/$(request.auth.uid));
+    }
+
+    // Allow global user collection access for multi-tenant workspace tracking
+    // Relaxed to allow admins to create portal accounts for clients
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Secure API Keys collection
+    match /api_keys/{keyId} {
+      // Only admins of the tenant can manage API keys for that tenant
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/organizations/$(resource.data.tenantId)/employees/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/organizations/$(resource.data.tenantId)/employees/$(request.auth.uid)).data.role == 'admin';
+      
+      // Allow creation if the new document's tenantId matches an org where the user is an admin
+      allow create: if request.auth != null && 
+        exists(/databases/$(database)/documents/organizations/$(request.resource.data.tenantId)/employees/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/organizations/$(request.resource.data.tenantId)/employees/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Secure Webhooks collection
+    match /webhooks/{webhookId} {
+      // Only admins of the tenant can manage webhooks for that tenant
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/organizations/$(resource.data.tenantId)/employees/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/organizations/$(resource.data.tenantId)/employees/$(request.auth.uid)).data.role == 'admin';
+      
+      // Allow creation if the new document's tenantId matches an org where the user is an admin
+      allow create: if request.auth != null && 
+        exists(/databases/$(database)/documents/organizations/$(request.resource.data.tenantId)/employees/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/organizations/$(request.resource.data.tenantId)/employees/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /organizations/{tenantId} {
+      
+      // Allow read/update/delete to the tenant root document if they are a member
+      allow read, update, delete: if request.auth != null && isTenantMember(tenantId);
+      
+      // Allow ANY authenticated user to CREATE a new organization
+      allow create: if request.auth != null;
+      
+      // Allow users to add themselves as an employee to a new organization
+      match /employees/{employeeId} {
+        allow create: if request.auth != null && request.auth.uid == employeeId;
+        allow read, update, delete: if request.auth != null && isTenantMember(tenantId);
+      }
+      
+      // Allow anyone to read the basic tenant config (needed for login/registration)
+      // Allow any authenticated user to create the config (needed for registration)
+      match /config/settings {
+        allow read: if true;
+        allow create: if request.auth != null;
+      }
+      
+      // Allow read/write to all collections/documents under this tenant if they are a member
+      match /{document=**} {
+        allow read, write: if request.auth != null && isTenantMember(tenantId);
+      }
+    }
+    
+    // Fallback: Deny access to everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

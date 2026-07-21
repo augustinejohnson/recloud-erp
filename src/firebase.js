@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, setDoc, getDoc, writeBatch, runTransaction } from 'firebase/firestore';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyD7-2eUXiARjiM0jx8cwPk7Kug7_zVCIPk",
@@ -15,14 +16,80 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 
-export const uploadFile = async (file, path) => {
+export const loginWithGoogle = async () => {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Secondary app for creating users without logging out current user
+const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+const secondaryAuth = getAuth(secondaryApp);
+
+// Auth Helpers
+export const loginUser = async (email, password) => {
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  return userCredential.user;
+};
+
+export const resetUserPassword = async (email) => {
+  await sendPasswordResetEmail(auth, email);
+};
+
+export const addUserWorkspace = async (uid, tenantId, companyName, role) => {
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  let workspaces = [];
+  if (userSnap.exists()) {
+    workspaces = userSnap.data().workspaces || [];
+  }
+  if (!workspaces.find(w => w.id === tenantId)) {
+    workspaces.push({ id: tenantId, name: companyName, role });
+    await setDoc(userRef, { workspaces }, { merge: true });
+  }
+};
+
+export const getUserWorkspaces = async (uid) => {
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    return userSnap.data().workspaces || [];
+  }
+  return [];
+};
+
+export const logoutUser = async () => {
+  await signOut(auth);
+};
+
+export const createAuthUser = async (email, name) => {
+  // Generate a random 16-char password
+  const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+  const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, tempPassword);
+  await updateProfile(userCredential.user, { displayName: name });
+  await sendPasswordResetEmail(auth, email);
+  await signOut(secondaryAuth);
+  return userCredential.user.uid;
+};
+
+export const uploadFile = async (file, path, onProgress) => {
   return new Promise((resolve, reject) => {
     const storageRef = ref(storage, path);
     const uploadTask = uploadBytesResumable(storageRef, file);
     uploadTask.on(
       'state_changed',
-      (snapshot) => { }, // could report progress here
+      (snapshot) => {
+        if (onProgress) {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          onProgress(pct);
+        }
+      },
       (error) => reject(error),
       async () => {
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
@@ -30,6 +97,27 @@ export const uploadFile = async (file, path) => {
       }
     );
   });
+};
+
+// Upload a real file to Firebase Storage and store metadata in Firestore
+export const uploadAndSaveDocument = async (file, folderId, uploadedBy, tenantId = "tenant_1", onProgress) => {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `organizations/${tenantId}/documents/${folderId || 'root'}/${Date.now()}_${safeName}`;
+  const downloadURL = await uploadFile(file, storagePath, onProgress);
+  const docsCol = collection(db, `organizations/${tenantId}/documents`);
+  const docRef = await addDoc(docsCol, {
+    name: file.name,
+    folderId: folderId || null,
+    type: file.name.split('.').pop().toLowerCase() || 'file',
+    size: file.size < 1024 * 1024
+      ? Math.round(file.size / 1024) + ' KB'
+      : (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+    url: downloadURL,
+    storagePath,
+    uploadedBy,
+    createdAt: serverTimestamp()
+  });
+  return docRef;
 };
 
 // --- MULTI-TENANT CONFIG ---
@@ -85,7 +173,7 @@ export const permanentlyDeleteFromHistory = async (historyDocId, tenantId = "ten
   await deleteDoc(historyRef);
 };
 
-export const registerTenant = async (companyName, workspaceSlug, adminEmail, adminPassword, address = '', phone = '', logoUrl = '') => {
+export const registerTenant = async (companyName, workspaceSlug, adminEmail, adminPassword, address = '', phone = '', logoUrl = '', industry = 'retail') => {
   // Check if workspace exists
   const configRef = doc(db, `organizations/${workspaceSlug}/config`, 'settings');
   const configSnap = await getDoc(configRef);
@@ -93,26 +181,52 @@ export const registerTenant = async (companyName, workspaceSlug, adminEmail, adm
     throw new Error('Workspace slug is already taken. Please choose another.');
   }
 
+  // Create or Login Firebase Auth User for the Admin using the main auth instance
+  let adminUid;
+  let currentUser = auth.currentUser;
+  
+  if (currentUser && currentUser.email === adminEmail) {
+    adminUid = currentUser.uid;
+  } else {
+    let userCredential;
+    try {
+      userCredential = await createUserWithEmailAndPassword(auth, adminEmail, adminPassword);
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') {
+        userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+      } else {
+        throw err;
+      }
+    }
+    adminUid = userCredential.user.uid;
+    currentUser = userCredential.user;
+  }
+  
+  await updateProfile(currentUser, { displayName: 'Admin' });
+
   // Create the Organization document in the config subcollection
   await setDoc(configRef, {
     companyName,
     address,
     phone,
     logoUrl,
+    industry,
     createdAt: serverTimestamp()
   });
 
-  // Create the Admin Employee for this organization
-  const employeesCol = collection(db, `organizations/${workspaceSlug}/employees`);
-  await addDoc(employeesCol, {
+  // Create the Admin Employee for this organization using their actual UID
+  const employeeRef = doc(db, `organizations/${workspaceSlug}/employees`, adminUid);
+  await setDoc(employeeRef, {
     name: 'Admin',
     email: adminEmail,
-    password: adminPassword,
     role: 'admin',
     department: 'Management',
     status: 'Clocked Out',
     createdAt: serverTimestamp()
   });
+
+  // Add workspace to the global user's workspaces
+  await addUserWorkspace(adminUid, workspaceSlug, companyName, 'admin');
 
   return workspaceSlug;
 };
@@ -168,12 +282,16 @@ export const getEmployees = async (tenantId = "tenant_1") => {
 };
 
 export const addEmployee = async (employeeData, tenantId = "tenant_1") => {
-  const employeesCol = collection(db, `organizations/${tenantId}/employees`);
-  await addDoc(employeesCol, {
+  const empRef = doc(db, `organizations/${tenantId}/employees`, employeeData.id);
+  await setDoc(empRef, {
     ...employeeData,
     status: 'Clocked Out', // Default status
     createdAt: serverTimestamp(),
   });
+  
+  const tenantConfig = await getTenantConfig(tenantId);
+  const companyName = tenantConfig?.companyName || tenantId;
+  await addUserWorkspace(employeeData.id, tenantId, companyName, employeeData.role);
 };
 
 export const clockIn = async (employeeId, tenantId = "tenant_1") => {
@@ -507,7 +625,19 @@ export const addStockMovement = async (movementData, tenantId = "tenant_1") => {
 
 
 export const deleteDocument = async (documentId, tenantId = "tenant_1") => {
+  // Try to delete from Storage first if storagePath exists
+  try {
+    const docSnap = await getDoc(doc(db, `organizations/${tenantId}/documents`, documentId));
+    if (docSnap.exists() && docSnap.data().storagePath) {
+      const storageRef = ref(storage, docSnap.data().storagePath);
+      await deleteObject(storageRef).catch(() => {}); // ignore if already gone
+    }
+  } catch {}
   await moveToHistory('documents', documentId, 'Document', 'Deleted Document', tenantId);
+};
+
+export const deleteApiKey = async (keyId) => {
+  await deleteDoc(doc(db, 'api_keys', keyId));
 };
 
 // ==================== INVENTORY: WAREHOUSES ====================
@@ -814,4 +944,38 @@ export const updateContract = async (contractId, updateData, tenantId = "tenant_
 
 export const deleteContract = async (contractId, tenantId = "tenant_1") => {
   await moveToHistory('contracts', contractId, 'Contract', 'Deleted Contract', tenantId);
+};
+
+// --- LAW FIRM: TIME TRACKING ---
+export const getTimeEntries = async (tenantId = "tenant_1") => {
+  const col = collection(db, `organizations/${tenantId}/time_entries`);
+  const snapshot = await getDocs(col);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+export const addTimeEntry = async (entryData, tenantId = "tenant_1") => {
+  const col = collection(db, `organizations/${tenantId}/time_entries`);
+  return await addDoc(col, { ...entryData, createdAt: serverTimestamp() });
+};
+
+export const updateTimeEntry = async (entryId, updateData, tenantId = "tenant_1") => {
+  const ref = doc(db, `organizations/${tenantId}/time_entries`, entryId);
+  await updateDoc(ref, { ...updateData, updatedAt: serverTimestamp() });
+};
+
+export const deleteTimeEntry = async (entryId, tenantId = "tenant_1") => {
+  const ref = doc(db, `organizations/${tenantId}/time_entries`, entryId);
+  await deleteDoc(ref);
+};
+
+// --- LAW FIRM: TRUST ACCOUNTING ---
+export const getTrustTransactions = async (tenantId = "tenant_1") => {
+  const col = collection(db, `organizations/${tenantId}/trust_transactions`);
+  const snapshot = await getDocs(col);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+export const addTrustTransaction = async (transactionData, tenantId = "tenant_1") => {
+  const col = collection(db, `organizations/${tenantId}/trust_transactions`);
+  return await addDoc(col, { ...transactionData, createdAt: serverTimestamp() });
 };

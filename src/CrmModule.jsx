@@ -7,10 +7,10 @@ import {
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell
 } from 'recharts';
-import { addCustomer, updateCustomer, deleteCustomer, addDeal, updateDealStatus, updateDeal, addInvoice, updateInvoiceStatus, updateInvoice, deleteInvoice, addEmployee, updateEmployee, deleteEmployee } from './firebase';
+import { addCustomer, updateCustomer, deleteCustomer, addDeal, updateDealStatus, updateDeal, addInvoice, updateInvoiceStatus, updateInvoice, deleteInvoice, addEmployee, updateEmployee, deleteEmployee, createAuthUser, getProjects } from './firebase';
 
 export default function CrmModule({ 
-  customers, deals, invoices, employees = [], currentTenant, tenantConfig, currentUser, refreshData 
+  customers, deals, invoices, employees = [], currentTenant, tenantConfig, currentUser, currentIndustry, refreshData 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, customers, deals, invoices
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,6 +41,49 @@ export default function CrmModule({
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [callTimer, setCallTimer] = useState(null);
+
+  // Law Firm Conflict Check
+  const [isConflictCheckOpen, setIsConflictCheckOpen] = useState(false);
+  const [conflictSearchName, setConflictSearchName] = useState('');
+  const [conflictResults, setConflictResults] = useState([]);
+  const [isCheckingConflict, setIsCheckingConflict] = useState(false);
+
+  const runConflictCheck = async () => {
+    if (!conflictSearchName.trim()) return;
+    setIsCheckingConflict(true);
+    try {
+      const searchLower = conflictSearchName.toLowerCase();
+      const allProjects = await getProjects(currentTenant);
+      
+      const results = [];
+      
+      // Check existing clients
+      customers.forEach(c => {
+        if (c.name.toLowerCase().includes(searchLower)) {
+          results.push({ type: 'Client', name: c.name, id: c.id, detail: 'Existing Client' });
+        }
+      });
+      
+      // Check projects (cases)
+      allProjects.forEach(p => {
+        if (p.name.toLowerCase().includes(searchLower)) {
+          results.push({ type: 'Case', name: p.name, id: p.id, detail: 'Case Name Match' });
+        }
+        if (p.opposingParty && p.opposingParty.toLowerCase().includes(searchLower)) {
+          results.push({ type: 'Opposing Party', name: p.opposingParty, id: p.id, detail: `Opponent in Case: ${p.name}` });
+        }
+        if (p.opposingCounsel && p.opposingCounsel.toLowerCase().includes(searchLower)) {
+          results.push({ type: 'Opposing Counsel', name: p.opposingCounsel, id: p.id, detail: `Counsel in Case: ${p.name}` });
+        }
+      });
+      
+      setConflictResults(results);
+    } catch (err) {
+      console.error(err);
+    }
+    setIsCheckingConflict(false);
+  };
+
 
   const handleOpenEditInvoice = (inv) => {
     const items = inv.items && inv.items.length > 0 ? inv.items : [{ description: inv.description || '', qty: 1, unitPrice: inv.amount || 0 }];
@@ -498,7 +541,7 @@ export default function CrmModule({
             <BarChart3 className="w-3.5 h-3.5 md:w-4 md:h-4 inline-block mr-1 md:mr-2" /> Dashboard
           </button>
           <button onClick={() => {setActiveTab('customers'); setSelectedCustomer(null);}} className={`px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-bold rounded-xl transition-all whitespace-nowrap ${activeTab === 'customers' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            <Users className="w-3.5 h-3.5 md:w-4 md:h-4 inline-block mr-1 md:mr-2" /> Customers
+            <Users className="w-3.5 h-3.5 md:w-4 md:h-4 inline-block mr-1 md:mr-2" /> {currentIndustry === 'law_firm' ? 'Clients' : 'Customers'}
           </button>
           <button onClick={() => {setActiveTab('deals'); setSelectedCustomer(null);}} className={`px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-bold rounded-xl transition-all whitespace-nowrap ${activeTab === 'deals' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <Target className="w-3.5 h-3.5 md:w-4 md:h-4 inline-block mr-1 md:mr-2" /> Pipeline
@@ -515,9 +558,14 @@ export default function CrmModule({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto mt-2 md:mt-0 justify-end">
+          {currentIndustry === 'law_firm' && (
+            <button onClick={() => setIsConflictCheckOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-amber-500/20 flex items-center gap-1.5 md:gap-2 mr-2">
+              <ShieldCheck className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">Conflict</span> Check
+            </button>
+          )}
           {activeTab === 'customers' && (
             <button onClick={() => setIsAddCustomerOpen(true)} className="bg-recloud-600 hover:bg-recloud-700 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-recloud-500/20 flex items-center gap-1.5 md:gap-2">
-              <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">Add</span> Customer
+              <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">Add</span> {currentIndustry === 'law_firm' ? 'Client' : 'Customer'}
             </button>
           )}
           {activeTab === 'deals' && (
@@ -544,7 +592,7 @@ export default function CrmModule({
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="p-4 font-bold border-b border-slate-200">Customer Name</th>
+                  <th className="p-4 font-bold border-b border-slate-200">{currentIndustry === 'law_firm' ? 'Client Name' : 'Customer Name'}</th>
                   <th className="p-4 font-bold border-b border-slate-200">Contact</th>
                   <th className="p-4 font-bold border-b border-slate-200">Phone</th>
                   <th className="p-4 font-bold border-b border-slate-200">Email</th>
@@ -553,7 +601,7 @@ export default function CrmModule({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredCustomers.length === 0 ? (
-                  <tr><td colSpan="5" className="p-8 text-center text-slate-500 font-medium">No customers found.</td></tr>
+                  <tr><td colSpan="5" className="p-8 text-center text-slate-500 font-medium">{currentIndustry === 'law_firm' ? 'No clients found.' : 'No customers found.'}</td></tr>
                 ) : filteredCustomers.map(customer => (
                   <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4">
@@ -594,7 +642,7 @@ export default function CrmModule({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in mb-6">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-bold text-slate-500">Total Customers</p>
+                <p className="text-sm font-bold text-slate-500">{currentIndustry === 'law_firm' ? 'Total Clients' : 'Total Customers'}</p>
                 <p className="text-2xl font-bold text-slate-800">{customers.length}</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
@@ -879,14 +927,16 @@ export default function CrmModule({
           const handleCreatePortalAccess = async (customer) => {
             const email = prompt(`Enter login email for "${customer.name}":`);
             if (!email) return;
-            const password = prompt('Set a temporary password (min 4 chars):');
-            if (!password || password.length < 4) { alert('Password too short.'); return; }
 
             try {
+              // 1. Create Firebase Auth user & send reset link
+              const authUid = await createAuthUser(email, customer.name);
+
+              // 2. Register as 'client' in employees collection using the secure Auth UID
               await addEmployee({
+                id: authUid,
                 name: customer.name,
                 email: email,
-                password: password,
                 role: 'client',
                 department: 'Client',
                 status: 'Active',
@@ -894,14 +944,18 @@ export default function CrmModule({
                 phone: customer.phone || '',
               }, currentTenant);
               
-              // Also store the link on the customer side
+              // 3. Also store the link on the customer side
               await updateCustomer(customer.id, { portalEnabled: true, portalEmail: email }, currentTenant);
               
-              alert(`Portal access created for ${customer.name}! They can now log in with ${email}.`);
+              alert(`Portal access created for ${customer.name}! A password setup email has been sent to ${email}.`);
               refreshData();
             } catch(err) {
               console.error(err);
-              alert('Failed to create portal access.');
+              if (err.code === 'auth/email-already-in-use') {
+                alert("This email is already registered in the system.");
+              } else {
+                alert('Failed to create portal access: ' + err.message);
+              }
             }
           };
 
@@ -916,6 +970,7 @@ export default function CrmModule({
                 refreshData();
               } catch(err) {
                 console.error(err);
+                alert('Failed to revoke access: ' + err.message);
               }
             }
           };
@@ -931,7 +986,7 @@ export default function CrmModule({
                 refreshData();
               } catch(err) {
                 console.error(err);
-                alert('Failed to delete login.');
+                alert('Failed to delete login: ' + err.message);
               }
             }
           };
@@ -1396,6 +1451,73 @@ export default function CrmModule({
               }} className="px-6 py-2.5 rounded-xl font-bold text-white bg-emerald-500 hover:bg-emerald-600 shadow-md hover:shadow-lg transition-all flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5" /> Approve Payment
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conflict Check Modal */}
+      {isConflictCheckOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><ShieldCheck className="w-6 h-6 text-amber-600"/> Conflict of Interest Check</h3>
+                <p className="text-sm text-slate-500 font-medium">Search across all clients, cases, and opposing parties.</p>
+              </div>
+              <button onClick={() => {setIsConflictCheckOpen(false); setConflictSearchName(''); setConflictResults([]);}} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6"/></button>
+            </div>
+            
+            <div className="p-6 bg-white border-b border-slate-100">
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                  <input 
+                    type="text" 
+                    value={conflictSearchName}
+                    onChange={e => setConflictSearchName(e.target.value)}
+                    placeholder="Enter name to check (e.g. John Doe)" 
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all font-medium text-slate-800"
+                    onKeyDown={e => e.key === 'Enter' && runConflictCheck()}
+                  />
+                </div>
+                <button onClick={runConflictCheck} disabled={isCheckingConflict || !conflictSearchName.trim()} className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold shadow-md shadow-amber-500/20 transition-all">
+                  {isCheckingConflict ? 'Checking...' : 'Run Check'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50 p-6">
+              {conflictResults.length === 0 && conflictSearchName && !isCheckingConflict ? (
+                <div className="text-center py-8">
+                  <ShieldCheck className="w-12 h-12 text-emerald-500 mx-auto mb-3 opacity-50" />
+                  <p className="text-emerald-700 font-bold">No conflicts found.</p>
+                  <p className="text-slate-500 text-sm mt-1">Clear to proceed with "{conflictSearchName}".</p>
+                </div>
+              ) : conflictResults.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 mb-4 text-red-600 bg-red-50 p-3 rounded-xl border border-red-100">
+                    <AlertTriangle className="w-5 h-5" />
+                    <p className="font-bold text-sm">Potential Conflicts Found ({conflictResults.length})</p>
+                  </div>
+                  {conflictResults.map((res, idx) => (
+                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-slate-800">{res.name}</p>
+                        <p className="text-xs text-slate-500 font-medium mt-1">{res.detail}</p>
+                      </div>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md ${res.type === 'Client' ? 'bg-blue-100 text-blue-700' : res.type === 'Case' ? 'bg-purple-100 text-purple-700' : 'bg-red-100 text-red-700'}`}>
+                        {res.type}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400">
+                  <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                  <p className="font-medium text-sm">Enter a name and run the check.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

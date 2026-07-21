@@ -605,83 +605,85 @@ export default function InventoryModule({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Top Bar */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between mb-6 gap-4 w-full">
-        <div className="flex gap-2 bg-slate-100 p-1.5 rounded-2xl w-full lg:w-auto shrink-0 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
-            { id: 'products', icon: Package, label: 'Products' },
-            { id: 'stock', icon: List, label: 'Stock' },
-            { id: 'movements', icon: ArrowRightLeft, label: 'Movements' },
-            { id: 'purchasing', icon: ShoppingCart, label: 'Purchasing (LPO)' },
-            { id: 'b2b_orders', icon: ShoppingCart, label: 'B2B Wholesale Orders' },
-            { id: 'warehouses', icon: Building, label: 'Warehouses' },
-            { id: 'branch_orders', icon: Truck, label: 'Branch Requisitions' },
-            { id: 'suppliers', icon: Truck, label: 'Suppliers' }
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 md:flex-none text-center px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-bold rounded-xl transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <tab.icon className="w-3.5 h-3.5 md:w-4 md:h-4 inline-block mr-1.5" /> <span className="hidden sm:inline">{tab.label}</span><span className="sm:hidden">{tab.label.split(' ')[0]}</span>
-            </button>
-          ))}
-        </div>
-        
-        <div className="flex gap-2 w-full lg:w-auto overflow-x-auto no-scrollbar pb-2 lg:pb-0">
-          {warehouses.length > 0 && (
-            <select value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)} className="bg-white border border-slate-200 text-slate-700 text-sm font-bold px-4 py-2 rounded-xl outline-none shadow-sm">
-              <option value="all">Global Inventory (All Branches)</option>
+      {/* Row 1: Navigation Tabs */}
+      <div className="flex gap-1.5 bg-slate-100 p-1 rounded-2xl w-full overflow-x-auto no-scrollbar mb-3">
+        {[
+          { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
+          { id: 'products', icon: Package, label: 'Products' },
+          { id: 'stock', icon: List, label: 'Stock' },
+          { id: 'movements', icon: ArrowRightLeft, label: 'Moves' },
+          { id: 'purchasing', icon: ShoppingCart, label: 'Purchase' },
+          { id: 'b2b_orders', icon: ShoppingCart, label: 'B2B' },
+          { id: 'warehouses', icon: Building, label: 'Warehouse' },
+          { id: 'branch_orders', icon: Truck, label: 'Requisition' },
+          { id: 'suppliers', icon: Truck, label: 'Suppliers' }
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-2.5 md:px-3 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-xl transition-all whitespace-nowrap flex items-center gap-1 md:gap-1.5 ${activeTab === tab.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <tab.icon className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0" /> {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Row 2: Branch Selector + Context Actions */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {warehouses.length > 0 && (
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 shadow-sm shrink-0">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Branch:</span>
+            <select value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)} className="bg-transparent text-slate-700 text-xs font-bold px-1 py-1.5 outline-none max-w-[140px]">
+              <option value="all">All Branches</option>
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
-          )}
-          {activeTab === 'products' && (
-            <div className="flex flex-wrap gap-1 md:gap-2 items-center">
-              <a href="product_import_template.csv" download className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-sm flex items-center gap-1 md:gap-2 transition-colors">
-                <DownloadCloud className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">Template</span>
-              </a>
-              <div className="relative overflow-hidden cursor-pointer group">
-                <button className="bg-slate-800 group-hover:bg-slate-900 text-white px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-sm flex items-center gap-1 md:gap-2 pointer-events-none transition-colors">
-                  <UploadCloud className="w-3 h-3 md:w-3.5 md:h-3.5" /> <span className="hidden sm:inline">Import</span>
-                </button>
-                <input type="file" accept=".csv" onChange={handleImportCSV} className="absolute inset-0 opacity-0 cursor-pointer" title="Import from CSV" />
-              </div>
-              {currentUser?.role === 'admin' && (
-                <button onClick={() => {
-                  const initialPrices = {};
-                  products.forEach(p => {
-                    initialPrices[p.id] = {
-                      costPrice: p.costPrice || 0,
-                      priceStaff: p.priceStaff || 0,
-                      priceDistributor: p.priceDistributor || 0,
-                      priceWholesale: p.priceWholesale || 0,
-                      stockLevel: getFilteredStock(p)
-                    };
-                  });
-                  setBulkPrices(initialPrices);
-                  setIsBulkPriceEditOpen(true);
-                }} className="bg-orange-500 hover:bg-orange-600 text-white px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-orange-500/20 flex items-center gap-1 md:gap-2">
-                  <Edit className="w-3 h-3 md:w-3.5 md:h-3.5" /> <span className="hidden sm:inline">Bulk Edit</span>
-                </button>
-              )}
-              <button onClick={() => setIsAddProductOpen(true)} className="bg-recloud-600 hover:bg-recloud-700 text-white px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-recloud-500/20 flex items-center gap-1 md:gap-2">
-                <Plus className="w-3 h-3 md:w-3.5 md:h-3.5" /> <span className="hidden sm:inline">Add</span>
+          </div>
+        )}
+        {activeTab === 'products' && (
+          <>
+            <a href="product_import_template.csv" download className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-sm flex items-center gap-1.5 transition-colors">
+              <DownloadCloud className="w-3.5 h-3.5" /> Template
+            </a>
+            <div className="relative overflow-hidden cursor-pointer group">
+              <button className="bg-slate-800 group-hover:bg-slate-900 text-white px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-sm flex items-center gap-1.5 pointer-events-none transition-colors">
+                <UploadCloud className="w-3.5 h-3.5" /> Import
               </button>
+              <input type="file" accept=".csv" onChange={handleImportCSV} className="absolute inset-0 opacity-0 cursor-pointer" title="Import from CSV" />
             </div>
-          )}
-          {activeTab === 'stock' && (
-            <div className="flex flex-wrap gap-2 items-center">
-              <button onClick={() => setIsBulkReceiveOpen(true)} className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md flex items-center gap-1 md:gap-2">
-                <List className="w-3.5 h-3.5 md:w-4 md:h-4" /> Bulk Receive
+            {currentUser?.role === 'admin' && (
+              <button onClick={() => {
+                const initialPrices = {};
+                products.forEach(p => {
+                  initialPrices[p.id] = {
+                    costPrice: p.costPrice || 0,
+                    priceStaff: p.priceStaff || 0,
+                    priceDistributor: p.priceDistributor || 0,
+                    priceWholesale: p.priceWholesale || 0,
+                    stockLevel: getFilteredStock(p)
+                  };
+                });
+                setBulkPrices(initialPrices);
+                setIsBulkPriceEditOpen(true);
+              }} className="bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-md shadow-orange-500/20 flex items-center gap-1.5">
+                <Edit className="w-3.5 h-3.5" /> Bulk Edit
               </button>
-              <button onClick={() => { setMovementForm({...movementForm, type: 'in', warehouseId: isBranchRestricted ? currentUser.warehouseId : ''}); setIsStockMovementOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-emerald-500/20 flex items-center gap-1 md:gap-2">
-                <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" /> Receive Item
-              </button>
-            </div>
-          )}
-          {activeTab === 'warehouses' && (
-            <button onClick={() => setIsTransferOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 flex items-center gap-2">
-              <ArrowRightLeft className="w-4 h-4" /> Stock Transfer
+            )}
+            <button onClick={() => setIsAddProductOpen(true)} className="bg-recloud-600 hover:bg-recloud-700 text-white px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-md shadow-recloud-500/20 flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" /> Add
             </button>
-          )}
-        </div>
+          </>
+        )}
+        {activeTab === 'stock' && (
+          <>
+            <button onClick={() => setIsBulkReceiveOpen(true)} className="bg-slate-800 hover:bg-slate-900 text-white px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-md flex items-center gap-1.5">
+              <List className="w-3.5 h-3.5" /> Bulk Receive
+            </button>
+            <button onClick={() => { setMovementForm({...movementForm, type: 'in', warehouseId: isBranchRestricted ? currentUser.warehouseId : ''}); setIsStockMovementOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-md shadow-emerald-500/20 flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" /> Receive Item
+            </button>
+          </>
+        )}
+        {activeTab === 'warehouses' && (
+          <button onClick={() => setIsTransferOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5">
+            <ArrowRightLeft className="w-3.5 h-3.5" /> Stock Transfer
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -867,14 +869,14 @@ export default function InventoryModule({
         {activeTab === 'stock' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[500px]">
                 <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Product</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">SKU</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Batch / Expiry</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Stock Level</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Product</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">SKU</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Batch / Expiry</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Stock Level</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -886,26 +888,26 @@ export default function InventoryModule({
                     const isExpiring = p.expiryDate && (new Date(p.expiryDate) - new Date()) / (1000 * 60 * 60 * 24) <= 90;
                     return (
                       <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        <td className="p-4">
-                          <div className="font-bold text-slate-800">{p.name}</div>
-                          {p.genericName && <div className="text-[10px] text-slate-400 italic mb-1">{p.genericName}</div>}
-                          <div className="text-xs text-slate-500">{p.category}</div>
+                        <td className="px-2 md:px-3 py-2">
+                          <div className="text-xs font-bold text-slate-800">{p.name}</div>
+                          {p.genericName && <div className="text-[10px] text-slate-400 italic">{p.genericName}</div>}
+                          <div className="text-[10px] text-slate-500">{p.category}</div>
                         </td>
-                        <td className="p-4 text-sm text-slate-600">{p.sku || '-'}</td>
-                        <td className="p-4">
-                          <div className="text-sm text-slate-700">{p.batchNumber || '-'}</div>
-                          <div className={`text-xs font-bold ${isExpiring ? 'text-red-500' : 'text-slate-500'}`}>{p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : '-'}</div>
+                        <td className="px-2 md:px-3 py-2 text-xs text-slate-600">{p.sku || '-'}</td>
+                        <td className="px-2 md:px-3 py-2">
+                          <div className="text-xs text-slate-700">{p.batchNumber || '-'}</div>
+                          <div className={`text-[10px] font-bold ${isExpiring ? 'text-red-500' : 'text-slate-500'}`}>{p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : '-'}</div>
                         </td>
-                        <td className="p-4">
-                          <span className={`px-2 py-1 rounded-lg text-xs font-bold ${stock < 10 ? 'bg-red-100 text-red-700' : stock < 50 ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <td className="px-2 md:px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${stock < 10 ? 'bg-red-100 text-red-700' : stock < 50 ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
                             {stock} in stock
                           </span>
                         </td>
-                        <td className="p-4 text-right">
+                        <td className="px-2 md:px-3 py-2 text-right">
                           {currentUser?.role === 'admin' && (
                             <>
-                              <button onClick={() => { setMovementForm({...movementForm, productId: p.id, type: 'in', warehouseId: isBranchRestricted ? currentUser.warehouseId : ''}); setIsStockMovementOpen(true); }} className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg mr-2">Stock In</button>
-                              <button onClick={() => { setMovementForm({...movementForm, productId: p.id, type: 'out', warehouseId: isBranchRestricted ? currentUser.warehouseId : ''}); setIsStockMovementOpen(true); }} className="text-xs font-bold text-orange-600 hover:text-orange-700 bg-orange-50 px-3 py-1 rounded-lg">Stock Out</button>
+                              <button onClick={() => { setMovementForm({...movementForm, productId: p.id, type: 'in', warehouseId: isBranchRestricted ? currentUser.warehouseId : ''}); setIsStockMovementOpen(true); }} className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg mr-1">In</button>
+                              <button onClick={() => { setMovementForm({...movementForm, productId: p.id, type: 'out', warehouseId: isBranchRestricted ? currentUser.warehouseId : ''}); setIsStockMovementOpen(true); }} className="text-[10px] font-bold text-orange-600 hover:text-orange-700 bg-orange-50 px-2 py-1 rounded-lg">Out</button>
                             </>
                           )}
                         </td>
@@ -921,16 +923,17 @@ export default function InventoryModule({
 
         {activeTab === 'movements' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in">
-            <table className="w-full text-left border-collapse">
+            <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[600px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Date</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Product</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Type</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Warehouse</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Qty</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Note</th>
-                  <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Date</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Product</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Type</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Warehouse</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Qty</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Note</th>
+                  <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -944,16 +947,16 @@ export default function InventoryModule({
                     const wh = warehouses.find(w => w.id === m.warehouseId);
                     return (
                       <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                        <td className="p-4 text-sm text-slate-600">{new Date(m.date).toLocaleString()}</td>
-                        <td className="p-4 font-bold text-slate-800">{prod?.name || 'Unknown'}</td>
-                        <td className="p-4">
+                        <td className="px-2 md:px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{new Date(m.date).toLocaleDateString()}</td>
+                        <td className="px-2 md:px-3 py-2 text-xs font-bold text-slate-800">{prod?.name || 'Unknown'}</td>
+                        <td className="px-2 md:px-3 py-2">
                           <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${m.type.includes('in') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{m.type}</span>
                           {m.isReversal && <span className="ml-2 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase bg-slate-200 text-slate-600">Reversal</span>}
                         </td>
-                        <td className="p-4 text-sm text-slate-600">{wh?.name || 'Main Warehouse'}</td>
-                        <td className="p-4 font-bold text-slate-800">{m.type.includes('in') ? '+' : '-'}{m.qty}</td>
-                        <td className="p-4 text-sm text-slate-500 max-w-xs truncate">{m.note || '-'}</td>
-                        <td className="p-4 text-right">
+                        <td className="px-2 md:px-3 py-2 text-xs text-slate-600">{wh?.name || 'Main'}</td>
+                        <td className="px-2 md:px-3 py-2 text-xs font-bold text-slate-800">{m.type.includes('in') ? '+' : '-'}{m.qty}</td>
+                        <td className="px-2 md:px-3 py-2 text-xs text-slate-500 max-w-[120px] truncate">{m.note || '-'}</td>
+                        <td className="px-2 md:px-3 py-2 text-right">
                           {!m.isReversal && (
                             <button onClick={() => handleReverseStockMovement(m)} className="text-xs font-bold text-slate-500 hover:text-red-600 bg-slate-100 hover:bg-red-50 px-3 py-1 rounded-lg transition-colors">
                               Reverse
@@ -967,6 +970,7 @@ export default function InventoryModule({
                 })()}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -975,7 +979,7 @@ export default function InventoryModule({
             <div className="flex justify-between items-center">
               <h3 className="font-bold text-slate-800 text-lg">Warehouse Locations</h3>
               {!isBranchRestricted && (
-                <button onClick={() => { setEditWarehouseData(null); setIsCreateWarehouseOpen(true); }} className="bg-recloud-600 hover:bg-recloud-700 text-white px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-recloud-500/20 flex items-center gap-1 md:gap-2">
+                <button onClick={() => { setEditWarehouseData(null); setIsAddWarehouseOpen(true); }} className="bg-recloud-600 hover:bg-recloud-700 text-white px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shadow-recloud-500/20 flex items-center gap-1 md:gap-2">
                   <Plus className="w-4 h-4" /> Add Branch
                 </button>
               )}
@@ -1009,17 +1013,18 @@ export default function InventoryModule({
             </div>
             
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[700px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Order ID</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Customer</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Date</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Items</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Total Amount</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Payment</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase">Status</th>
-                    <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Order ID</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Customer</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Date</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Items</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Amount</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Payment</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Status</th>
+                    <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1034,26 +1039,25 @@ export default function InventoryModule({
                     }).map(order => (
                       <React.Fragment key={order.id}>
                         <tr className="border-b border-slate-50 hover:bg-slate-50/50 cursor-pointer" onClick={() => setSelectedB2BOrder(selectedB2BOrder?.id === order.id ? null : order)}>
-                          <td className="p-4 text-sm font-bold text-slate-700">#{order.invoiceNumber || order.id.substring(0, 8).toUpperCase()}</td>
-                          <td className="p-4">
-                            <div className="font-bold text-slate-800">{order.userName}</div>
-                            <div className="text-xs text-slate-500 capitalize">{order.userRole?.replace('_', ' ')}</div>
+                          <td className="px-2 md:px-3 py-2 text-xs font-bold text-slate-700">#{order.invoiceNumber || order.id.substring(0, 8).toUpperCase()}</td>
+                          <td className="px-2 md:px-3 py-2">
+                            <div className="text-xs font-bold text-slate-800">{order.userName}</div>
+                            <div className="text-[10px] text-slate-500 capitalize">{order.userRole?.replace('_', ' ')}</div>
                           </td>
-                          <td className="p-4 text-xs text-slate-500">{order.date ? new Date(order.date).toLocaleDateString('en-NG', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
-                          <td className="p-4 text-sm text-slate-600">{order.items?.length || 0} items</td>
-                          <td className="p-4 font-bold text-slate-800">₦{(Number(order.totalAmount) || 0).toLocaleString()}</td>
-                          <td className="p-4">
-                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${order.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {order.paymentStatus === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
+                          <td className="px-2 md:px-3 py-2 text-[10px] md:text-xs text-slate-500 whitespace-nowrap">{order.date ? new Date(order.date).toLocaleDateString('en-NG', { month: 'short', day: 'numeric' }) : 'N/A'}</td>
+                          <td className="px-2 md:px-3 py-2 text-xs text-slate-600">{order.items?.length || 0}</td>
+                          <td className="px-2 md:px-3 py-2 text-xs font-bold text-slate-800 whitespace-nowrap">₦{(Number(order.totalAmount) || 0).toLocaleString()}</td>
+                          <td className="px-2 md:px-3 py-2">
+                            <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${order.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {order.paymentStatus === 'paid' ? '✓ Paid' : 'Unpaid'}
                             </span>
-                            <div className="text-[10px] text-slate-400 mt-1 capitalize">{order.paymentMethod === 'pay_now' ? 'Card' : order.paymentMethod === 'transfer' ? 'Transfer' : 'Invoice'}</div>
                           </td>
-                          <td className="p-4">
-                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${order.status === 'pending' ? 'bg-orange-100 text-orange-700' : order.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          <td className="px-2 md:px-3 py-2">
+                            <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold ${order.status === 'pending' ? 'bg-orange-100 text-orange-700' : order.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                               {order.status || 'pending'}
                             </span>
                           </td>
-                          <td className="p-4 text-right">
+                          <td className="px-2 md:px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                               {order.paymentMethod === 'pay_later' && order.paymentStatus !== 'paid' && (
                                 <button onClick={async () => {
@@ -1208,6 +1212,7 @@ export default function InventoryModule({
                   </tbody>
                 </table>
               </div>
+              </div>
             </div>
         )}
 
@@ -1222,15 +1227,15 @@ export default function InventoryModule({
             
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">PO Number</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">Date</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">Supplier</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">Total Amount</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">Status</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
+                      <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">PO #</th>
+                      <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Date</th>
+                      <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Supplier</th>
+                      <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Amount</th>
+                      <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase">Status</th>
+                      <th className="px-2 md:px-3 py-2 text-[10px] md:text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1247,26 +1252,28 @@ export default function InventoryModule({
                         const supplier = suppliers.find(s => s.id === po.supplierId);
                         return (
                           <tr key={po.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                            <td className="p-4 text-sm font-bold text-slate-800">#{po.id.substring(0, 8).toUpperCase()}</td>
-                            <td className="p-4 text-sm text-slate-600">{new Date(po.createdAt?.seconds * 1000 || Date.now()).toLocaleDateString()}</td>
-                            <td className="p-4 text-sm text-slate-800">{supplier ? supplier.name : 'Unknown Supplier'}</td>
-                            <td className="p-4 text-sm font-bold text-slate-800">₦{po.totalAmount?.toLocaleString()}</td>
-                            <td className="p-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${po.status === 'delivered' ? 'bg-emerald-100 text-emerald-700' : po.status === 'approved' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                            <td className="px-2 md:px-3 py-2 text-xs font-bold text-slate-800">#{po.id.substring(0, 8).toUpperCase()}</td>
+                            <td className="px-2 md:px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{new Date(po.createdAt?.seconds * 1000 || Date.now()).toLocaleDateString()}</td>
+                            <td className="px-2 md:px-3 py-2 text-xs text-slate-800">{supplier ? supplier.name : 'Unknown'}</td>
+                            <td className="px-2 md:px-3 py-2 text-xs font-bold text-slate-800 whitespace-nowrap">₦{po.totalAmount?.toLocaleString()}</td>
+                            <td className="px-2 md:px-3 py-2">
+                              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${po.status === 'delivered' ? 'bg-emerald-100 text-emerald-700' : po.status === 'approved' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
                                 {po.status === 'delivered' ? 'Delivered' : po.status === 'approved' ? 'Approved' : 'Pending'}
                               </span>
                             </td>
-                            <td className="p-4 text-right flex justify-end gap-2">
-                              <button onClick={() => generateLPOPdf(po)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Download PDF"><Download className="w-4 h-4"/></button>
+                            <td className="px-2 md:px-3 py-2 text-right">
+                              <div className="flex justify-end gap-1">
+                              <button onClick={() => generateLPOPdf(po)} className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Download PDF"><Download className="w-3.5 h-3.5"/></button>
                               {po.status === 'pending' && currentUser?.role === 'admin' && (
-                                <button onClick={() => handleUpdatePOStatus(po, 'approved')} className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Approve PO"><CheckCircle2 className="w-4 h-4"/></button>
+                                <button onClick={() => handleUpdatePOStatus(po, 'approved')} className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Approve PO"><CheckCircle2 className="w-3.5 h-3.5"/></button>
                               )}
                               {po.status === 'approved' && (
-                                <button onClick={() => handleUpdatePOStatus(po, 'delivered')} className="text-xs font-bold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors">Mark Delivered</button>
+                                <button onClick={() => handleUpdatePOStatus(po, 'delivered')} className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-1 rounded-lg hover:bg-emerald-700 transition-colors">Delivered</button>
                               )}
                               {currentUser?.role === 'admin' && (
-<button onClick={() => { if(window.confirm('Delete this PO?')) { deletePurchaseOrder(po.id, currentTenant).then(refreshData) } }} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete PO"><Trash2 className="w-4 h-4"/></button>
+<button onClick={() => { if(window.confirm('Delete this PO?')) { deletePurchaseOrder(po.id, currentTenant).then(refreshData) } }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete PO"><Trash2 className="w-3.5 h-3.5"/></button>
 )}
+                              </div>
                             </td>
                           </tr>
                         );

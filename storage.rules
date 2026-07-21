@@ -1,8 +1,23 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // Documents stored under each organization's namespace
+    match /organizations/{tenantId}/documents/{allPaths=**} {
+      // Any authenticated user can read
+      allow read: if request.auth != null;
+      // Only authenticated users can write (upload/delete)
+      allow write: if request.auth != null
+        && request.resource.size < 100 * 1024 * 1024; // 100 MB max per file
+    }
+    // Profile pictures and logos
+    match /profile_pictures/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 5 * 1024 * 1024; // 5 MB max
+    }
+    // Fallback: block everything else
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
   }
 }

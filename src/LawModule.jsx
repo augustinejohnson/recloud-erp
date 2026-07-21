@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, MoreHorizontal, User, Calendar, AlignLeft, Star, MessageSquare, ChevronLeft, ChevronRight, Trash2, LayoutGrid, Clock, PlayCircle, StopCircle } from 'lucide-react';
-import { getProjects, addProject, updateProject, deleteProject, getTasks, addTask, updateTask, deleteTask, getEmployees, getTimeEntries, addTimeEntry, deleteTimeEntry } from './firebase';
+import { Plus, MoreHorizontal, User, Calendar, AlignLeft, Star, MessageSquare, ChevronLeft, ChevronRight, Trash2, LayoutGrid, Clock, PlayCircle, StopCircle, FileText } from 'lucide-react';
+import { getProjects, addProject, updateProject, deleteProject, getTasks, addTask, updateTask, deleteTask, getEmployees, addInvoice } from './firebase';
 
-export default function ProjectsModule({ currentTenant, currentUser, customers = [], currentIndustry }) {
+export default function LawModule({ currentTenant, currentUser, customers = [], currentIndustry }) {
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   
@@ -15,14 +15,9 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const [isEditingProject, setIsEditingProject] = useState(false);
-  const [editingProjectData, setEditingProjectData] = useState({ name: '', description: '', clientId: '', clientName: '', startDate: '', endDate: '', status: 'Active', opposingParty: '', opposingCounsel: '', courtDate: '', statuteOfLimitations: '' });
+  const [editingProjectData, setEditingProjectData] = useState({ name: '', description: '', clientId: '', clientName: '', startDate: '', endDate: '', status: 'Active', caseNumber: '', judge: '', opposingCounsel: '', courtDate: '', hourlyRate: '' });
   
-  const [timeEntries, setTimeEntries] = useState([]);
-  const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
-  const [newTimeEntry, setNewTimeEntry] = useState({ description: '', hours: '', rate: 250, date: new Date().toISOString().split('T')[0] });
-
-  
-  const [newTaskStatus, setNewTaskStatus] = useState('todo');
+  const [newTaskStatus, setNewTaskStatus] = useState('intake');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
   
@@ -69,10 +64,8 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
   useEffect(() => {
     if (activeProject) {
       loadTasks(activeProject.id);
-      if (currentIndustry === 'law_firm') loadTimeEntries(activeProject.id);
     } else {
       setTasks([]);
-      setTimeEntries([]);
     }
   }, [activeProject]);
 
@@ -104,17 +97,8 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
     }
   };
 
-  const loadTimeEntries = async (projectId) => {
-    try {
-      const entries = await getTimeEntries(currentTenant);
-      setTimeEntries(entries.filter(e => e.projectId === projectId));
-    } catch (err) {
-      console.error("Error loading time entries:", err);
-    }
-  };
-
   const handleCreateProject = () => {
-    setEditingProjectData({ name: '', description: '', clientId: '', clientName: '', startDate: '', endDate: '', status: 'Active', opposingParty: '', opposingCounsel: '', courtDate: '', statuteOfLimitations: '' });
+    setEditingProjectData({ name: '', description: '', clientId: '', clientName: '', startDate: '', endDate: '', status: 'Active', caseNumber: '', judge: '', opposingCounsel: '', courtDate: '', hourlyRate: '' });
     setIsEditingProject(true);
   };
 
@@ -128,10 +112,11 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
       startDate: activeProject.startDate || '',
       endDate: activeProject.endDate || '',
       status: activeProject.status || 'Active',
-      opposingParty: activeProject.opposingParty || '',
+      caseNumber: activeProject.caseNumber || '',
+      judge: activeProject.judge || '',
       opposingCounsel: activeProject.opposingCounsel || '',
       courtDate: activeProject.courtDate || '',
-      statuteOfLimitations: activeProject.statuteOfLimitations || ''
+      hourlyRate: activeProject.hourlyRate || ''
     });
     setIsEditingProject(true);
   };
@@ -158,6 +143,62 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
     } catch (err) {
       console.error(err);
       alert("Failed to save project.");
+    }
+  };
+
+  const handleGenerateInvoice = async () => {
+    if (!activeProject || !activeProject.hourlyRate) return;
+    const currentBillable = tasks.reduce((sum, t) => sum + (((t.timeSpent || 0) + (activeTimers[t.id] ? Math.floor((Date.now() - activeTimers[t.id]) / 1000) : 0)) / 3600) * parseFloat(activeProject.hourlyRate), 0);
+    
+    if (currentBillable <= 0) return alert('No billable time to invoice.');
+    if (!confirm(`Generate invoice for ₦${currentBillable.toLocaleString(undefined, {minimumFractionDigits: 2})}?`)) return;
+
+    try {
+      const invoiceData = {
+        customerName: activeProject.clientName || 'Unknown Client',
+        clientId: activeProject.clientId || '',
+        date: new Date().toISOString(),
+        dueDate: new Date(Date.now() + 14 * 86400000).toISOString(),
+        items: [{
+          desc: `Legal Services - ${activeProject.name} (Case: ${activeProject.caseNumber || 'N/A'})`,
+          qty: 1,
+          price: currentBillable,
+          amount: currentBillable
+        }],
+        totalAmount: currentBillable,
+        status: 'Sent',
+        type: 'legal_billing',
+        projectId: activeProject.id,
+        createdBy: currentUser?.name || 'Admin'
+      };
+
+      await addInvoice(invoiceData, currentTenant);
+
+      // Reset timers and move timeSpent to billedTime
+      const newTasks = [];
+      const timersToClear = { ...activeTimers };
+      
+      for (const t of tasks) {
+        let currentSecs = t.timeSpent || 0;
+        if (activeTimers[t.id]) {
+          currentSecs += Math.floor((Date.now() - activeTimers[t.id]) / 1000);
+          delete timersToClear[t.id];
+        }
+        if (currentSecs > 0) {
+          const newBilledTime = (t.billedTime || 0) + currentSecs;
+          await updateTask(activeProject.id, t.id, { timeSpent: 0, billedTime: newBilledTime }, currentTenant);
+          newTasks.push({ ...t, timeSpent: 0, billedTime: newBilledTime });
+        } else {
+          newTasks.push(t);
+        }
+      }
+      
+      setActiveTimers(timersToClear);
+      setTasks(newTasks);
+      alert('Invoice successfully generated in Accounting!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate invoice.');
     }
   };
 
@@ -212,7 +253,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
   };
 
   const moveTask = async (taskId, currentStatus, direction) => {
-    const statuses = ['todo', 'in-progress', 'review', 'done'];
+    const statuses = ['intake', 'discovery', 'pretrial', 'closed'];
     const currentIndex = statuses.indexOf(currentStatus);
     const nextIndex = direction === 'right' ? currentIndex + 1 : currentIndex - 1;
     
@@ -247,14 +288,14 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
   };
 
   const columns = [
-    { id: 'todo', label: 'To Do', color: 'bg-slate-200' },
-    { id: 'in-progress', label: 'In Progress', color: 'bg-blue-200' },
-    { id: 'review', label: 'Review', color: 'bg-orange-200' },
-    { id: 'done', label: 'Done', color: 'bg-green-200' }
+    { id: 'intake', label: 'Client Intake', color: 'bg-slate-200' },
+    { id: 'discovery', label: 'Discovery', color: 'bg-blue-200' },
+    { id: 'pretrial', label: 'Pre-Trial / Docs', color: 'bg-orange-200' },
+    { id: 'closed', label: 'Closed', color: 'bg-green-200' }
   ];
 
   if (isLoading) {
-    return <div className="p-8 text-center text-slate-500">{currentIndustry === 'law_firm' ? 'Loading cases...' : 'Loading projects...'}</div>;
+    return <div className="p-8 text-center text-slate-500">{'Loading cases...'}</div>;
   }
 
   return (
@@ -262,33 +303,21 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
       {/* Top Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-800">{currentIndustry === 'law_firm' ? 'Case Management' : 'Project Tracker'}</h1>
-          <p className="text-sm text-slate-500">{currentIndustry === 'law_firm' ? 'Track case details, manage team matters, and billable time' : 'Track tasks, manage team projects, and review performance'}</p>
-        </div>
-        
-        {activeProject && currentIndustry === 'law_firm' && (
-          <div className="hidden lg:flex items-center gap-4 text-xs bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
-            {activeProject.opposingParty && (
-              <div className="border-r border-slate-200 pr-4">
-                <span className="text-slate-400 font-bold uppercase tracking-wider block">Opposing Party</span>
-                <span className="font-medium text-slate-700">{activeProject.opposingParty}</span>
-              </div>
+          <h1 className="text-2xl font-black text-slate-800">{'Case Management'}</h1>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-sm text-slate-500">Track matters and billable time.</p>
+            {activeProject && activeProject.hourlyRate && (
+              <span className="text-sm font-bold px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                Total Billable: ${tasks.reduce((sum, t) => sum + (((t.timeSpent || 0) + (activeTimers[t.id] ? Math.floor((Date.now() - activeTimers[t.id]) / 1000) : 0)) / 3600) * parseFloat(activeProject.hourlyRate), 0).toFixed(2)}
+              </span>
             )}
-            {activeProject.courtDate && (
-              <div className="border-r border-slate-200 pr-4">
-                <span className="text-slate-400 font-bold uppercase tracking-wider block">Court Date</span>
-                <span className={`font-medium ${new Date(activeProject.courtDate) < new Date(Date.now() + 30*24*60*60*1000) ? 'text-red-600 font-bold' : 'text-slate-700'}`}>{new Date(activeProject.courtDate).toLocaleDateString()}</span>
-              </div>
-            )}
-            {activeProject.statuteOfLimitations && (
-              <div>
-                <span className="text-slate-400 font-bold uppercase tracking-wider block">SOL Deadline</span>
-                <span className={`font-medium ${new Date(activeProject.statuteOfLimitations) < new Date(Date.now() + 30*24*60*60*1000) ? 'text-red-600 font-bold' : 'text-slate-700'}`}>{new Date(activeProject.statuteOfLimitations).toLocaleDateString()}</span>
-              </div>
+            {activeProject && activeProject.hourlyRate && tasks.some(t => t.timeSpent > 0 || activeTimers[t.id]) && (
+              <button onClick={handleGenerateInvoice} className="text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded flex items-center gap-1 shadow-sm transition-colors">
+                <FileText className="w-3.5 h-3.5" /> Generate Invoice
+              </button>
             )}
           </div>
-        )}
-
+        </div>
         <div className="flex gap-3 items-center">
           <div className="hidden sm:flex bg-slate-200 p-1 rounded-xl">
             {currentUser?.role === 'admin' && (
@@ -335,15 +364,9 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
             )}
           </div>
 
-          {currentIndustry === 'law_firm' && activeProject && (
-            <button onClick={() => setIsTimeModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-all">
-              <Clock className="w-4 h-4" /> Time & Billing
-            </button>
-          )}
-
           {currentUser?.role === 'admin' && (
 <button onClick={handleCreateProject} className="bg-recloud-600 hover:bg-recloud-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md shadow-recloud-500/20 flex items-center gap-2 transition-all">
-            <Plus className="w-4 h-4" /> {currentIndustry === 'law_firm' ? 'New Case' : 'New Project'}
+            <Plus className="w-4 h-4" /> {'New Case'}
           </button>
 )}
         </div>
@@ -354,10 +377,10 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-slate-400">
             <AlignLeft className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-700 mb-2">{currentIndustry === 'law_firm' ? 'No Cases Yet' : 'No Projects Yet'}</h2>
-          <p className="text-slate-500 mb-6 max-w-md text-center">{currentIndustry === 'law_firm' ? 'Create a new case to start tracking matters and collaborating with your firm.' : 'Create a new project to start tracking tasks and collaborating with your team.'}</p>
+          <h2 className="text-xl font-bold text-slate-700 mb-2">{'No Cases Yet'}</h2>
+          <p className="text-slate-500 mb-6 max-w-md text-center">{'Create a new case to start tracking matters and collaborating with your firm.'}</p>
           <button onClick={handleCreateProject} className="bg-recloud-600 hover:bg-recloud-700 text-white px-6 py-3 rounded-xl font-bold shadow-md shadow-recloud-500/20 flex items-center gap-2 transition-all">
-            <Plus className="w-5 h-5" /> {currentIndustry === 'law_firm' ? 'Create First Case' : 'Create First Project'}
+            <Plus className="w-5 h-5" /> {'Create First Case'}
           </button>
         </div>
       ) : viewMode === 'calendar' ? (
@@ -392,7 +415,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
                       </span>
                       <div className="mt-2 space-y-1.5">
                         {dayTasks.map(t => (
-                          <div key={t.id} className={`text-[10px] px-2 py-1.5 rounded-md font-bold truncate border shadow-sm ${t.status === 'done' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                          <div key={t.id} className={`text-[10px] px-2 py-1.5 rounded-md font-bold truncate border shadow-sm ${t.status === 'closed' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
                             {t.title}
                           </div>
                         ))}
@@ -434,7 +457,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-2">
-                        {col.id !== 'todo' && (
+                        {col.id !== 'intake' && (
                           <button onClick={() => moveTask(task.id, col.id, 'left')} className="p-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-500 shadow-sm md:hidden">
                             <ChevronLeft className="w-4 h-4" />
                           </button>
@@ -442,7 +465,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm ${task.priority === 'Critical' ? 'bg-red-100 text-red-600' : task.priority === 'High' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
                           {task.priority || 'Medium'}
                         </span>
-                        {col.id !== 'done' && (
+                        {col.id !== 'closed' && (
                           <button onClick={() => moveTask(task.id, col.id, 'right')} className="p-0.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-500 shadow-sm md:hidden">
                             <ChevronRight className="w-4 h-4" />
                           </button>
@@ -482,7 +505,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
                     </div>
 
                     {/* Review & Rating Section for Review/Done Columns */}
-                    {(col.id === 'review' || col.id === 'done') && (
+                    {(col.id === 'pretrial' || col.id === 'closed') && (
                       <div className="mt-4 pt-3 border-t border-dashed border-slate-200">
                         {activeRatingTaskId === task.id ? (
                           <div className="flex flex-col gap-2">
@@ -583,42 +606,42 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100">
-              <h3 className="text-xl font-black text-slate-800">{activeProject && editingProjectData.id === activeProject.id ? (currentIndustry === 'law_firm' ? 'Edit Case' : 'Edit Project') : (currentIndustry === 'law_firm' ? 'Create Case' : 'Create Project')}</h3>
+              <h3 className="text-xl font-black text-slate-800">{activeProject && editingProjectData.id === activeProject.id ? ('Edit Case') : ('Create Case')}</h3>
             </div>
-            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{currentIndustry === 'law_firm' ? 'Case Name' : 'Project Name'}</label>
-                <input type="text" value={editingProjectData.name} onChange={e => setEditingProjectData({...editingProjectData, name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder={currentIndustry === 'law_firm' ? 'e.g. Smith v. Jones' : 'e.g. Website Redesign'} />
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Case Name</label>
+                  <input type="text" value={editingProjectData.name} onChange={e => setEditingProjectData({...editingProjectData, name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. Smith v. Jones" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Case Number</label>
+                  <input type="text" value={editingProjectData.caseNumber} onChange={e => setEditingProjectData({...editingProjectData, caseNumber: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. CV-2026-1234" />
+                </div>
               </div>
-              
-              {currentIndustry === 'law_firm' && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Opposing Party</label>
-                      <input type="text" value={editingProjectData.opposingParty} onChange={e => setEditingProjectData({...editingProjectData, opposingParty: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. Jane Doe" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Opposing Counsel</label>
-                      <input type="text" value={editingProjectData.opposingCounsel} onChange={e => setEditingProjectData({...editingProjectData, opposingCounsel: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. Bob Smith, Esq." />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-red-600">Court Date</label>
-                      <input type="date" value={editingProjectData.courtDate} onChange={e => setEditingProjectData({...editingProjectData, courtDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 text-red-600">Statute of Limitations</label>
-                      <input type="date" value={editingProjectData.statuteOfLimitations} onChange={e => setEditingProjectData({...editingProjectData, statuteOfLimitations: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
-                    </div>
-                  </div>
-                </>
-              )}
-
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Description</label>
-                <textarea value={editingProjectData.description} onChange={e => setEditingProjectData({...editingProjectData, description: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800 h-20 resize-none" placeholder="Brief project description..." />
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Description / Summary</label>
+                <textarea value={editingProjectData.description} onChange={e => setEditingProjectData({...editingProjectData, description: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800 h-20 resize-none" placeholder="Brief case description..." />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Judge / Court</label>
+                  <input type="text" value={editingProjectData.judge} onChange={e => setEditingProjectData({...editingProjectData, judge: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. Hon. John Doe" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Opposing Counsel</label>
+                  <input type="text" value={editingProjectData.opposingCounsel} onChange={e => setEditingProjectData({...editingProjectData, opposingCounsel: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. Jane Smith Esq." />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Hourly Rate ($)</label>
+                  <input type="number" step="0.01" value={editingProjectData.hourlyRate} onChange={e => setEditingProjectData({...editingProjectData, hourlyRate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" placeholder="e.g. 250.00" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Next Court Date</label>
+                  <input type="date" value={editingProjectData.courtDate} onChange={e => setEditingProjectData({...editingProjectData, courtDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -626,8 +649,8 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
                   <input type="date" value={editingProjectData.startDate} onChange={e => setEditingProjectData({...editingProjectData, startDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">End Date</label>
-                  <input type="date" value={editingProjectData.endDate} onChange={e => setEditingProjectData({...editingProjectData, endDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Next Court Date</label>
+                  <input type="date" value={editingProjectData.courtDate} onChange={e => setEditingProjectData({...editingProjectData, courtDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -656,103 +679,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
             </div>
             <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
               <button onClick={() => setIsEditingProject(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
-              <button onClick={saveProject} className="px-5 py-2.5 bg-blue-600 text-white font-bold hover:bg-blue-700 hover:shadow-md rounded-xl transition-all">{currentIndustry === 'law_firm' ? 'Save Case' : 'Save Project'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Time & Billing Modal */}
-      {isTimeModalOpen && activeProject && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <div>
-                <h3 className="text-xl font-black text-slate-800">Time & Billing</h3>
-                <p className="text-sm text-slate-500 font-medium">{activeProject.name}</p>
-              </div>
-              <button onClick={() => setIsTimeModalOpen(false)} className="text-slate-400 hover:text-slate-600"><XCircle className="w-6 h-6"/></button>
-            </div>
-            
-            <div className="p-6 bg-white border-b border-slate-100">
-              <h4 className="text-sm font-bold text-slate-700 mb-3">Log New Time</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="md:col-span-2">
-                  <input type="text" value={newTimeEntry.description} onChange={e => setNewTimeEntry({...newTimeEntry, description: e.target.value})} placeholder="Description (e.g. Client call)" className="w-full text-sm border border-slate-200 rounded-lg p-2.5 outline-none focus:border-blue-500" />
-                </div>
-                <div>
-                  <input type="number" step="0.1" value={newTimeEntry.hours} onChange={e => setNewTimeEntry({...newTimeEntry, hours: e.target.value})} placeholder="Hours (e.g. 1.5)" className="w-full text-sm border border-slate-200 rounded-lg p-2.5 outline-none focus:border-blue-500" />
-                </div>
-                <div>
-                  <input type="number" value={newTimeEntry.rate} onChange={e => setNewTimeEntry({...newTimeEntry, rate: e.target.value})} placeholder="Rate (₦/hr)" className="w-full text-sm border border-slate-200 rounded-lg p-2.5 outline-none focus:border-blue-500" />
-                </div>
-              </div>
-              <div className="flex justify-between items-center mt-3">
-                <input type="date" value={newTimeEntry.date} onChange={e => setNewTimeEntry({...newTimeEntry, date: e.target.value})} className="text-sm border border-slate-200 rounded-lg p-2.5 outline-none focus:border-blue-500" />
-                <button onClick={async () => {
-                  if (!newTimeEntry.description || !newTimeEntry.hours || !newTimeEntry.rate) return alert("Please fill all fields");
-                  const entryData = {
-                    ...newTimeEntry,
-                    hours: parseFloat(newTimeEntry.hours),
-                    rate: parseFloat(newTimeEntry.rate),
-                    projectId: activeProject.id,
-                    projectName: activeProject.name,
-                    clientId: activeProject.clientId || '',
-                    billed: false
-                  };
-                  try {
-                    const docRef = await addTimeEntry(entryData, currentTenant);
-                    setTimeEntries([{ id: docRef.id, ...entryData }, ...timeEntries]);
-                    setNewTimeEntry({ description: '', hours: '', rate: newTimeEntry.rate, date: new Date().toISOString().split('T')[0] });
-                  } catch (err) {
-                    console.error(err);
-                  }
-                }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2">
-                  <Plus className="w-4 h-4" /> Add Time
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-slate-50 p-6">
-              <h4 className="text-sm font-bold text-slate-700 mb-3">Time Entries</h4>
-              {timeEntries.length === 0 ? (
-                <p className="text-center text-slate-500 text-sm py-4">No time logged yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {timeEntries.sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
-                    <div key={entry.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center">
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{entry.description}</p>
-                        <p className="text-xs text-slate-500 font-medium">{entry.date} &bull; {entry.hours} hrs @ ₦{entry.rate}/hr</p>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-black text-slate-700">₦{(entry.hours * entry.rate).toLocaleString()}</span>
-                        {entry.billed ? (
-                          <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold uppercase">Billed</span>
-                        ) : (
-                          <button onClick={async () => {
-                            if(confirm("Delete entry?")) {
-                              await deleteTimeEntry(entry.id, currentTenant);
-                              setTimeEntries(timeEntries.filter(e => e.id !== entry.id));
-                            }
-                          }} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="p-6 border-t border-slate-100 bg-white flex justify-between items-center">
-              <div className="text-sm">
-                <span className="text-slate-500 font-bold uppercase tracking-wider block text-[10px]">Unbilled Total</span>
-                <span className="font-black text-xl text-slate-800">
-                  ₦{timeEntries.filter(e => !e.billed).reduce((sum, e) => sum + (e.hours * e.rate), 0).toLocaleString()}
-                </span>
-              </div>
-              {/* Note: Invoicing will be handled in AccountingModule, but for ease, a hint could be placed here, or a button to push to Accounting. */}
-              <p className="text-xs text-slate-400 italic">Bill these hours via the Accounting Module.</p>
+              <button onClick={saveProject} className="px-5 py-2.5 bg-blue-600 text-white font-bold hover:bg-blue-700 hover:shadow-md rounded-xl transition-all">{'Save Case'}</button>
             </div>
           </div>
         </div>
