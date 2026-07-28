@@ -55,6 +55,17 @@ export const addUserWorkspace = async (uid, tenantId, companyName, role) => {
   }
 };
 
+
+export const removeUserWorkspace = async (uid, tenantId) => {
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    let workspaces = userSnap.data().workspaces || [];
+    workspaces = workspaces.filter(w => w.id !== tenantId);
+    await setDoc(userRef, { workspaces }, { merge: true });
+  }
+};
+
 export const getUserWorkspaces = async (uid) => {
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
@@ -329,6 +340,7 @@ export const deactivateEmployee = async (employeeId, tenantId = "tenant_1") => {
 export const deleteEmployee = async (employeeId, tenantId = "tenant_1") => {
   const employeeRef = doc(db, `organizations/${tenantId}/employees`, employeeId);
   await deleteDoc(employeeRef);
+  await removeUserWorkspace(employeeId, tenantId);
 };
 
 export const activateEmployee = async (employeeId, tenantId = "tenant_1") => {

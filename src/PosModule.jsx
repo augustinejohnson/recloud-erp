@@ -39,7 +39,7 @@ export default function PosModule({ currentTenant, currentUser }) {
 
   useEffect(() => {
     if (!currentTenant) return;
-    const unsubProducts = onSnapshot(collection(db, `organizations/${currentTenant}/inventory`), snap => {
+    const unsubProducts = onSnapshot(collection(db, `organizations/${currentTenant}/products`), snap => {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     const unsubCustomers = onSnapshot(collection(db, `organizations/${currentTenant}/customers`), snap => {
@@ -49,7 +49,9 @@ export default function PosModule({ currentTenant, currentUser }) {
   }, [currentTenant]);
 
   const getFilteredStock = (product) => {
-    if (!currentUser?.warehouseId) return Number(product.stock || 0);
+    if (!currentUser?.warehouseId) {
+      return Object.values(product.stockByWarehouse || {}).reduce((sum, val) => sum + (Number(val) || 0), 0) || Number(product.stock || 0);
+    }
     const branchStock = product.stockByWarehouse || {};
     return Number(branchStock[currentUser.warehouseId] || 0);
   };
@@ -186,7 +188,7 @@ export default function PosModule({ currentTenant, currentUser }) {
       </div>
 
       {/* LEFT PANEL: CART & CHECKOUT */}
-      <div className={`w-full md:w-[450px] bg-white border-r border-slate-200 flex-col shadow-2xl z-10 h-full ${mobileView === 'cart' ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`w-full md:w-[450px] shrink-0 bg-white border-r border-slate-200 flex-col shadow-2xl z-10 h-full ${mobileView === 'cart' ? 'flex' : 'hidden md:flex'}`}>
         
         {/* Cart Header */}
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -220,9 +222,37 @@ export default function PosModule({ currentTenant, currentUser }) {
             ))}
           </select>
           {!selectedCustomer && (
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" placeholder="Name (Optional)" value={manualCustomerName} onChange={e => setManualCustomerName(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
-              <input type="text" placeholder="Phone (Optional)" value={manualCustomerPhone} onChange={e => setManualCustomerPhone(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="text" placeholder="Name (Optional)" value={manualCustomerName} onChange={e => setManualCustomerName(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
+                <input type="text" placeholder="Phone (Optional)" value={manualCustomerPhone} onChange={e => setManualCustomerPhone(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
+              </div>
+              {manualCustomerName && (
+                <button 
+                  onClick={async () => {
+                    if (!manualCustomerName) return;
+                    try {
+                      setIsProcessing(true);
+                      const newCustRef = await addDoc(collection(db, `organizations/${currentTenant}/customers`), {
+                        name: manualCustomerName,
+                        phone: manualCustomerPhone,
+                        status: 'Active',
+                        createdAt: serverTimestamp()
+                      });
+                      setSelectedCustomer({ id: newCustRef.id, name: manualCustomerName, phone: manualCustomerPhone });
+                      setManualCustomerName('');
+                      setManualCustomerPhone('');
+                    } catch (err) {
+                      alert("Failed to save customer");
+                    } finally {
+                      setIsProcessing(false);
+                    }
+                  }}
+                  className="w-full text-xs font-bold bg-recloud-50 text-recloud-600 hover:bg-recloud-100 py-2 rounded-lg transition-colors border border-recloud-200"
+                >
+                  + Save as New Customer
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -241,7 +271,7 @@ export default function PosModule({ currentTenant, currentUser }) {
                 <div className="flex-1 min-w-0 pr-2">
                   <h4 className="font-bold text-slate-800 text-sm break-words">{item.name}</h4>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-recloud-600 font-bold">₦{item.price.toLocaleString()}</span>
+                    <span className="text-xs text-recloud-600 font-bold">₦{Number(item.price || 0).toLocaleString()}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1 border border-slate-100">
@@ -259,7 +289,7 @@ export default function PosModule({ currentTenant, currentUser }) {
                   <button onClick={() => updateQuantity(item.id, 1)} className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-white rounded transition-colors"><Plus className="w-4 h-4" /></button>
                 </div>
                 <div className="w-20 text-right font-bold text-slate-800 pl-2">
-                  ₦{(item.quantity * item.price).toLocaleString()}
+                  ₦{(Number(item.quantity || 0) * Number(item.price || 0)).toLocaleString()}
                 </div>
               </div>
             ))
@@ -271,7 +301,7 @@ export default function PosModule({ currentTenant, currentUser }) {
           <div className="space-y-2 mb-4">
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-500 font-medium">Subtotal</span>
-              <span className="text-slate-800 font-bold">₦{cartTotal.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              <span className="text-slate-800 font-bold">₦{Number(cartTotal || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-500 font-medium">Discount (%)</span>
@@ -284,12 +314,12 @@ export default function PosModule({ currentTenant, currentUser }) {
             <div className="h-px bg-slate-200 w-full my-2"></div>
             <div className="flex justify-between items-center">
               <span className="text-lg font-bold text-slate-800">Total</span>
-              <span className="text-2xl font-black text-emerald-600">₦{total.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              <span className="text-2xl font-black text-emerald-600">₦{Number(total || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
             </div>
           </div>
           
           <button onClick={() => setShowPaymentModal(true)} disabled={cart.length === 0} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold py-4 rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-2 text-lg">
-            <CreditCard className="w-6 h-6" /> Charge ₦{total.toLocaleString(undefined, {minimumFractionDigits:2})}
+            <CreditCard className="w-6 h-6" /> Charge ₦{Number(total || 0).toLocaleString(undefined, {minimumFractionDigits:2})}
           </button>
         </div>
       </div>
@@ -380,7 +410,7 @@ export default function PosModule({ currentTenant, currentUser }) {
           <div className="bg-white rounded-3xl w-[500px] shadow-2xl overflow-hidden animate-in zoom-in-95">
             <div className="p-6 bg-emerald-600 text-white text-center">
               <h2 className="text-xl font-medium opacity-90 mb-1">Total to Pay</h2>
-              <div className="text-5xl font-black tracking-tight">₦{total.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+              <div className="text-5xl font-black tracking-tight">₦{Number(total || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
             </div>
             <div className="p-6">
               <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Select Payment Method</h3>
@@ -485,16 +515,16 @@ export default function PosModule({ currentTenant, currentUser }) {
             <div className="bg-slate-50 rounded-xl p-4 mb-6 space-y-3 border border-slate-200">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Opening Float</span>
-                <span className="font-bold">₦{activeShift.openingFloat.toLocaleString()}</span>
+                <span className="font-bold">₦{Number(activeShift?.openingFloat || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Cash Sales</span>
-                <span className="font-bold text-emerald-600">+ ₦{activeShift.cashSales.toLocaleString()}</span>
+                <span className="font-bold text-emerald-600">+ ₦{Number(activeShift?.cashSales || 0).toLocaleString()}</span>
               </div>
               <div className="h-px bg-slate-200 w-full"></div>
               <div className="flex justify-between text-base">
                 <span className="font-bold text-slate-700">Expected Cash in Drawer</span>
-                <span className="font-black text-slate-800">₦{(activeShift.openingFloat + activeShift.cashSales).toLocaleString()}</span>
+                <span className="font-black text-slate-800">₦{(Number(activeShift?.openingFloat || 0) + Number(activeShift?.cashSales || 0)).toLocaleString()}</span>
               </div>
             </div>
 
@@ -503,8 +533,8 @@ export default function PosModule({ currentTenant, currentUser }) {
               <input type="number" value={actualCash} onChange={e => setActualCash(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-emerald-500 text-lg font-bold" placeholder="Enter counted cash" autoFocus />
               
               {actualCash !== '' && (
-                <div className={`mt-2 text-sm font-bold ${Number(actualCash) === (activeShift.openingFloat + activeShift.cashSales) ? 'text-emerald-600' : 'text-red-500'}`}>
-                  Difference: ₦{(Number(actualCash) - (activeShift.openingFloat + activeShift.cashSales)).toLocaleString()}
+                <div className={`mt-2 text-sm font-bold ${Number(actualCash) === (Number(activeShift?.openingFloat || 0) + Number(activeShift?.cashSales || 0)) ? 'text-emerald-600' : 'text-red-500'}`}>
+                  Difference: ₦{(Number(actualCash) - (Number(activeShift?.openingFloat || 0) + Number(activeShift?.cashSales || 0))).toLocaleString()}
                 </div>
               )}
             </div>

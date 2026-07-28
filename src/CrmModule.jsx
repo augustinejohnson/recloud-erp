@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import emailjs from '@emailjs/browser';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
@@ -41,7 +42,7 @@ export default function CrmModule({
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [callTimer, setCallTimer] = useState(null);
-
+  const [isCustomerDetailsOpen, setIsCustomerDetailsOpen] = useState(false);
   // Law Firm Conflict Check
   const [isConflictCheckOpen, setIsConflictCheckOpen] = useState(false);
   const [conflictSearchName, setConflictSearchName] = useState('');
@@ -368,24 +369,46 @@ export default function CrmModule({
   const handleSendEmail = async () => {
     if (!selectedCustomer || !emailSubject || !emailBody) return;
     
-    // Log the email
-    const note = {
-      text: `Email Sent: ${emailSubject}\n\n${emailBody.substring(0, 50)}...`,
-      type: 'Email',
-      date: new Date().toISOString(),
-      author: currentUser?.name || 'Admin'
-    };
-    const updatedNotes = [...(selectedCustomer.notes || []), note];
+    if (!selectedCustomer.email) {
+      alert("This customer does not have an email address saved.");
+      return;
+    }
     
     try {
+      // Send real email via EmailJS
+      const templateParams = {
+        subject: emailSubject,
+        message: emailBody,
+        to_email: selectedCustomer.email,
+        company_name: tenantConfig?.companyName || 'Recloud Enterprise'
+      };
+      
+      await emailjs.send(
+        'service_frjrxls',
+        'template_3o7pzww',
+        templateParams,
+        'YpGEbA7itkKMIQSl_'
+      );
+
+      // Log the email in CRM notes
+      const note = {
+        text: `Email Sent: ${emailSubject}\n\n${emailBody.substring(0, 50)}...`,
+        type: 'Email',
+        date: new Date().toISOString(),
+        author: currentUser?.name || 'Admin'
+      };
+      const updatedNotes = [...(selectedCustomer.notes || []), note];
+      
       await updateCustomer(selectedCustomer.id, { notes: updatedNotes }, currentTenant);
       setSelectedCustomer({ ...selectedCustomer, notes: updatedNotes });
       setIsEmailModalOpen(false);
       setEmailSubject('');
       setEmailBody('');
       refreshData();
+      alert("Email sent successfully!");
     } catch (err) {
-      console.error(err);
+      console.error('FAILED to send email...', err);
+      alert("Failed to send email. Check console for details.");
     }
   };
 
@@ -603,7 +626,7 @@ export default function CrmModule({
                 {filteredCustomers.length === 0 ? (
                   <tr><td colSpan="5" className="p-8 text-center text-slate-500 font-medium">{currentIndustry === 'law_firm' ? 'No clients found.' : 'No customers found.'}</td></tr>
                 ) : filteredCustomers.map(customer => (
-                  <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={customer.id} onClick={() => { setSelectedCustomer(customer); setIsCustomerDetailsOpen(true); }} className="hover:bg-slate-50 transition-colors cursor-pointer">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
@@ -1116,6 +1139,134 @@ export default function CrmModule({
             </div>
           );
         })()}
+
+      {/* Customer Details Drawer */}
+      {isCustomerDetailsOpen && selectedCustomer && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-end animate-in fade-in">
+          <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                  {selectedCustomer.name?.charAt(0)}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">{selectedCustomer.name}</h3>
+                  <p className="text-sm font-medium text-slate-500">{selectedCustomer.contactPerson || 'No primary contact'}</p>
+                </div>
+              </div>
+              <button onClick={() => setIsCustomerDetailsOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"><X className="w-5 h-5"/></button>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Contact Info Card */}
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Contact Information</h4>
+                <div className="space-y-3">
+                  {selectedCustomer.phone && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><Phone className="w-4 h-4" /></div>
+                      <a href={`tel:${selectedCustomer.phone}`} className="font-medium text-slate-700 hover:text-emerald-600">{selectedCustomer.phone}</a>
+                    </div>
+                  )}
+                  {selectedCustomer.email && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><Mail className="w-4 h-4" /></div>
+                      <a href={`mailto:${selectedCustomer.email}`} className="font-medium text-slate-700 hover:text-blue-600">{selectedCustomer.email}</a>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <a href={`tel:${selectedCustomer.phone || ''}`} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-3 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-sm">
+                  <Phone className="w-4 h-4" /> Call
+                </a>
+                <a href={`https://wa.me/${(selectedCustomer.phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="bg-green-50 hover:bg-green-100 text-green-700 font-bold py-3 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-sm">
+                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                </a>
+                <button onClick={(e) => { e.stopPropagation(); setEmailSubject(''); setEmailBody(''); setIsEmailModalOpen(true); }} className="bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-3 px-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors text-sm">
+                  <Mail className="w-4 h-4" /> Email
+                </button>
+              </div>
+
+              {/* Add Note Form */}
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Add a Note</h4>
+                <div className="flex gap-2 mb-2">
+                  <select value={newActivityType} onChange={e => setNewActivityType(e.target.value)} className="text-xs font-bold border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-recloud-500">
+                    <option value="Note">Note</option>
+                    <option value="Call">Call Log</option>
+                    <option value="Email">Email Log</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Follow-up">Follow-up</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <textarea
+                    value={newNoteText}
+                    onChange={e => setNewNoteText(e.target.value)}
+                    placeholder="Type your note here..."
+                    rows="2"
+                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500 resize-none bg-white"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!newNoteText.trim() || !selectedCustomer) return;
+                    const note = { text: newNoteText, type: newActivityType, date: new Date().toISOString(), author: currentUser?.name || 'Admin' };
+                    const updatedNotes = [...(selectedCustomer.notes || []), note];
+                    try {
+                      await updateCustomer(selectedCustomer.id, { notes: updatedNotes }, currentTenant);
+                      setSelectedCustomer({ ...selectedCustomer, notes: updatedNotes });
+                      setNewNoteText('');
+                      setNewActivityType('Note');
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  disabled={!newNoteText.trim()}
+                  className="mt-2 w-full bg-recloud-600 hover:bg-recloud-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg transition-colors text-sm flex items-center justify-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" /> Save Note
+                </button>
+              </div>
+
+              {/* Notes History */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Notes & Activity</h4>
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{(selectedCustomer.notes || []).length}</span>
+                </div>
+                <div className="space-y-3">
+                  {selectedCustomer.notes && selectedCustomer.notes.length > 0 ? (
+                    [...selectedCustomer.notes].reverse().map((note, idx) => (
+                      <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${note?.type === 'Call' ? 'bg-emerald-100 text-emerald-700' : note?.type === 'Email' ? 'bg-blue-100 text-blue-700' : note?.type === 'Meeting' ? 'bg-purple-100 text-purple-700' : 'bg-yellow-100 text-yellow-700'}`}>{note?.type || 'Note'}</span>
+                          <span className="text-[10px] text-slate-400">{note?.date ? new Date(note.date).toLocaleDateString() : ''}</span>
+                        </div>
+                        <p className="text-sm text-slate-600 whitespace-pre-wrap">{typeof note === 'object' ? (note?.text || '') : String(note)}</p>
+                        <p className="text-[10px] text-slate-400 mt-2 text-right">— {note?.author || 'Admin'}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                      <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm text-slate-500">No notes yet. Add one above!</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50">
+              <button onClick={() => { setIsCustomerDetailsOpen(false); setEditingCustomer(selectedCustomer); setIsAddCustomerOpen(true); }} className="w-full bg-white border-2 border-slate-200 hover:border-recloud-500 text-slate-700 hover:text-recloud-600 font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2">
+                <Edit className="w-4 h-4" /> Edit Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {isAddCustomerOpen && (

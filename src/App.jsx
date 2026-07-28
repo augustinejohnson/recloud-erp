@@ -68,6 +68,7 @@ import { getEmployees, addEmployee, clockIn, clockOut, updateEmployee, deactivat
   createAuthUser,
   loginWithGoogle,
   getUserWorkspaces,
+  removeUserWorkspace,
   db,
   auth
 } from './firebase';
@@ -932,8 +933,13 @@ export default function App() {
           setError('Your account is inactive. Please contact your administrator.');
         }
       } else {
+        // Auto-cleanup ghost workspace
+        await removeUserWorkspace(userUid, workspaceId);
         await logoutUser();
-        setError('No employee record found for this account in the selected workspace.');
+        setShowWorkspaceSelect(false);
+        setAvailableWorkspaces([]);
+        setTempAuthUser(null);
+        setError('No employee record found for this account in the selected workspace. Invalid workspace removed.');
       }
     } catch (err) {
       console.error("Error loading workspace:", err);
@@ -942,16 +948,34 @@ export default function App() {
   };
 
   const processUserWorkspaces = async (user) => {
-    const workspaces = await getUserWorkspaces(user.uid);
-    if (workspaces.length === 0) {
+    const rawWorkspaces = await getUserWorkspaces(user.uid);
+    
+    // Auto-verify workspaces to prevent ghosts from showing up
+    const verifiedWorkspaces = [];
+    for (const ws of rawWorkspaces) {
+      try {
+        const empRef = doc(db, `organizations/${ws.id}/employees`, user.uid);
+        const empSnap = await getDoc(empRef);
+        if (empSnap.exists()) {
+          verifiedWorkspaces.push(ws);
+        } else {
+          // If the employee doc doesn't exist, this is a ghost workspace. Remove it.
+          await removeUserWorkspace(user.uid, ws.id);
+        }
+      } catch (err) {
+        console.error('Error verifying workspace:', err);
+      }
+    }
+
+    if (verifiedWorkspaces.length === 0) {
       setPublicView('register');
       setRegEmail(user.email || '');
       setAuthMessage({ type: 'error', text: 'You need to register a workspace first to continue.' });
-    } else if (workspaces.length === 1) {
-      await loadWorkspace(workspaces[0].id, user.uid);
+    } else if (verifiedWorkspaces.length === 1) {
+      await loadWorkspace(verifiedWorkspaces[0].id, user.uid);
     } else {
-      // Multiple workspaces, show selection UI
-      setAvailableWorkspaces(workspaces);
+      // Multiple valid workspaces, show selection UI
+      setAvailableWorkspaces(verifiedWorkspaces);
       setTempAuthUser(user);
       setShowWorkspaceSelect(true);
     }
@@ -1394,14 +1418,6 @@ export default function App() {
               </button>
             </form>
           )}
-
-          <div className="mt-8 pt-6 border-t border-slate-200">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center mb-3">One-Click Demo Accounts</p>
-            <div className="grid grid-cols-1 gap-2 text-xs text-slate-600">
-              <button onClick={() => setLoginEmail('admin@adamz.com')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-left font-medium transition-colors border border-slate-200">👉 <b>admin@adamz.com</b> <span className="text-slate-400 ml-1">(HR / Full Access)</span></button>
-              <button onClick={() => setLoginEmail('staff@adamz.com')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-left font-medium transition-colors border border-slate-200">👉 <b>staff@adamz.com</b> <span className="text-slate-400 ml-1">(Employee Self-Service)</span></button>
-            </div>
-          </div>
         </div>
       </div>
     );

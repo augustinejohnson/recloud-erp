@@ -229,24 +229,25 @@ export default function InventoryModule({
     const delimiter = text.includes(';') && !text.includes(',') ? ';' : ',';
     // basic CSV regex to ignore delimiters inside quotes
     const re = delimiter === ';' ? /;(?=(?:(?:[^"]*"){2})*[^"]*$)/ : /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
-    const rows = text.split(/\r?\n/).filter(row => row.trim().length > 0);
+    const rows = text.split(/\r\n|\n|\r/).filter(row => row.trim().length > 0);
     if (rows.length < 2) {
       alert("Invalid CSV or empty file.");
       return;
     }
 
-    const headers = rows[0].split(re).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
-    
-    const nameIdx = headers.findIndex(h => h.includes('brand') || h.includes('name'));
+    let headers = rows[0].split(re).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    if (headers.length === 1) headers = rows[0].split(delimiter).map(h => h.trim().toLowerCase()); // fallback
+
+    const nameIdx = headers.findIndex(h => h === 'name' || h === 'product' || h === 'item' || h.includes('brand') || h.includes('name'));
     const genericIdx = headers.findIndex(h => h.includes('generic'));
-    const staffPriceIdx = headers.findIndex(h => h.includes('staff'));
-    const wholesalePriceIdx = headers.findIndex(h => h.includes('wholesale'));
+    const staffPriceIdx = headers.findIndex(h => h.includes('staff') || h.includes('cost'));
+    const wholesalePriceIdx = headers.findIndex(h => h.includes('wholesale') || h.includes('price'));
     const distPriceIdx = headers.findIndex(h => h.includes('distributor'));
     const catIdx = headers.findIndex(h => h.includes('category') && !h.includes('sub'));
     const subCatIdx = headers.findIndex(h => h.includes('sub') && h.includes('category'));
 
     if (nameIdx === -1) {
-      alert("Could not find a 'Brand Name' or 'Name' column in the CSV.");
+      alert("Could not find a 'Brand Name', 'Product', 'Item', or 'Name' column in the CSV. Headers found: " + headers.join(', '));
       return;
     }
 
@@ -254,7 +255,9 @@ export default function InventoryModule({
     // We won't block UI entirely, but we'll show a quick alert after it's done.
     // For large files, we might want a loading spinner. The app doesn't have a global loader here but we can rely on standard alerts.
     for (let i = 1; i < rows.length; i++) {
-       const cols = rows[i].split(re).map(col => col.replace(/^"|"$/g, '').trim());
+       let cols = rows[i].split(re).map(col => col.replace(/^"|"$/g, '').trim());
+       if (cols.length < Math.max(2, headers.length - 2)) cols = rows[i].split(delimiter).map(col => col.trim()); // fallback
+
        if (!cols[nameIdx]) continue;
        
        const p = {
@@ -263,10 +266,10 @@ export default function InventoryModule({
          genericName: genericIdx !== -1 && cols[genericIdx] ? cols[genericIdx] : '',
          category: catIdx !== -1 && cols[catIdx] ? cols[catIdx] : 'Imported',
          subCategory: subCatIdx !== -1 && cols[subCatIdx] ? cols[subCatIdx] : '',
-         costPrice: staffPriceIdx !== -1 ? cols[staffPriceIdx].replace(/[^\d.]/g, '') || '0' : '0', // Fallback for old CSVs, ideally should have a costPrice col
-         priceStaff: staffPriceIdx !== -1 ? cols[staffPriceIdx].replace(/[^\d.]/g, '') || '0' : '0',
-         priceWholesale: wholesalePriceIdx !== -1 ? cols[wholesalePriceIdx].replace(/[^\d.]/g, '') || '0' : '0',
-         priceDistributor: distPriceIdx !== -1 ? cols[distPriceIdx].replace(/[^\d.]/g, '') : (wholesalePriceIdx !== -1 ? cols[wholesalePriceIdx].replace(/[^\d.]/g, '') || '0' : '0'),
+         costPrice: staffPriceIdx !== -1 && cols[staffPriceIdx] ? cols[staffPriceIdx].replace(/[^\d.]/g, '') || '0' : '0', // Fallback for old CSVs, ideally should have a costPrice col
+         priceStaff: staffPriceIdx !== -1 && cols[staffPriceIdx] ? cols[staffPriceIdx].replace(/[^\d.]/g, '') || '0' : '0',
+         priceWholesale: wholesalePriceIdx !== -1 && cols[wholesalePriceIdx] ? cols[wholesalePriceIdx].replace(/[^\d.]/g, '') || '0' : '0',
+         priceDistributor: distPriceIdx !== -1 && cols[distPriceIdx] ? cols[distPriceIdx].replace(/[^\d.]/g, '') : (wholesalePriceIdx !== -1 && cols[wholesalePriceIdx] ? cols[wholesalePriceIdx].replace(/[^\d.]/g, '') || '0' : '0'),
        };
        try {
          await addProduct(p, currentTenant);
@@ -626,16 +629,17 @@ export default function InventoryModule({
       </div>
 
       {/* Row 2: Branch Selector + Context Actions */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {warehouses.length > 0 && (
-          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 shadow-sm shrink-0">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Branch:</span>
-            <select value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)} className="bg-transparent text-slate-700 text-xs font-bold px-1 py-1.5 outline-none max-w-[140px]">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        {warehouses.length > 0 && ['stock', 'movements', 'purchasing', 'b2b_orders', 'branch_orders'].includes(activeTab) && (
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 shadow-sm shrink-0 w-full sm:w-auto">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider py-1.5">Branch:</span>
+            <select value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)} className="bg-transparent text-slate-700 text-xs font-bold px-1 py-1.5 outline-none flex-1 min-w-[140px]">
               <option value="all">All Branches</option>
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </div>
         )}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
         {activeTab === 'products' && (
           <>
             <a href="product_import_template.csv" download className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-2.5 py-1.5 rounded-xl text-[10px] md:text-xs font-bold shadow-sm flex items-center gap-1.5 transition-colors">
@@ -685,6 +689,7 @@ export default function InventoryModule({
             <ArrowRightLeft className="w-3.5 h-3.5" /> Stock Transfer
           </button>
         )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto">
