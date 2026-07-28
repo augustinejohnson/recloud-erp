@@ -769,7 +769,7 @@ export default function InventoryModule({
                           <Package className="w-5 h-5"/>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-slate-800 break-words">{p.name}</h4>
+                          <h4 className="font-bold text-slate-800 truncate" title={p.name}>{p.name}</h4>
                           <p className="text-xs text-slate-500 mb-2">Min Threshold: {minStock}</p>
                           <div className={`font-black text-lg ${isCritical ? 'text-red-600' : 'text-orange-600'}`}>
                             {stock} In Stock

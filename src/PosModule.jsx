@@ -113,12 +113,17 @@ export default function PosModule({ currentTenant, currentUser }) {
     if (cart.length === 0) return alert('Cart is empty.');
     setIsProcessing(true);
     try {
-      const invRef = collection(db, `organizations/${currentTenant}/invoices`);
-      const invoiceData = {
+      const salesRef = collection(db, `organizations/${currentTenant}/sales`);
+      const taxAmt = cartTotal * (Number(taxPercent)||0) / 100;
+      const discAmt = cartTotal * (Number(discountPercent)||0) / 100;
+      const saleData = {
         customerName: selectedCustomer ? selectedCustomer.name : (manualCustomerName || 'Walk-in'),
         customerPhone: selectedCustomer ? (selectedCustomer.phone || '') : (manualCustomerPhone || ''),
         items: cart,
         totalAmount: total,
+        taxAmount: taxAmt,
+        taxPercent: Number(taxPercent)||0,
+        discountAmount: discAmt,
         paymentMethod: paymentMethod,
         splitAmounts: paymentMethod === 'Split' ? splitAmounts : null,
         date: new Date().toISOString(),
@@ -127,7 +132,21 @@ export default function PosModule({ currentTenant, currentUser }) {
         status: 'Paid',
         type: 'Sales Receipt'
       };
-      await addDoc(invRef, invoiceData);
+      const newSale = await addDoc(salesRef, saleData);
+
+      // Add to Ledger for Accounting Sync
+      const ledgerRef = collection(db, `organizations/${currentTenant}/ledger`);
+      await addDoc(ledgerRef, {
+        date: new Date().toISOString(),
+        description: `POS Sale: ${newSale.id}`,
+        referenceId: newSale.id,
+        type: 'Revenue',
+        amount: total,
+        taxCollected: taxAmt,
+        paymentMethod: paymentMethod,
+        createdBy: currentUser?.name || 'Staff',
+        timestamp: serverTimestamp()
+      });
 
       // Deduct stock properly
       for (const item of cart) {
