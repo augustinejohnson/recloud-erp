@@ -882,10 +882,16 @@ export default function App() {
       currentY = doc.lastAutoTable.finalY + 15;
       
       // Totals
-      doc.setFontSize(16);
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(30, 41, 59);
-      doc.text(`Net Pay / Final Amount: ${pdfCurrency}${Number(ps.netAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 14, currentY);
+      autoTable(doc, {
+        startY: currentY,
+        body: [['', 'Net Pay / Final Amount', `${pdfCurrency}${Number(ps.netAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`]],
+        theme: 'plain',
+        styles: { font: 'helvetica', fontSize: 10, fontStyle: 'bold', textColor: [30, 41, 59] },
+        columnStyles: { 
+          0: { cellWidth: 35 },
+          2: { halign: 'right' } 
+        }
+      });
       
       doc.save(`Statement_of_Account_${ps.employeeName}_${ps.period}.pdf`);
     } catch (error) {

@@ -523,7 +523,7 @@ export default function CrmModule({
       doc.text('Subtotal:', 140, finalY + 20, { align: 'right' });
       doc.text('Tax (0%):', 140, finalY + 27, { align: 'right' });
       
-      doc.setFontSize(16);
+      doc.setFontSize(11);
       doc.setTextColor(...primaryColor);
       doc.setFont('helvetica', 'bold');
       doc.text('Total Due:', 140, finalY + 37, { align: 'right' });
@@ -533,7 +533,7 @@ export default function CrmModule({
       doc.text(`${pdfCurrency}${Number(inv.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 196, finalY + 20, { align: 'right' });
       doc.text(`${pdfCurrency}0.00`, 196, finalY + 27, { align: 'right' });
       
-      doc.setFontSize(16);
+      doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...accentColor);
       doc.text(`${pdfCurrency}${Number(inv.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 196, finalY + 37, { align: 'right' });
