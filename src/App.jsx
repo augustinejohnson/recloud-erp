@@ -2910,7 +2910,7 @@ export default function App() {
               </button>
             </div>
             
-            <div className="p-6">
+            <div className="p-6 max-h-[80vh] overflow-y-auto">
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 bg-recloud-100 text-recloud-600 rounded-full flex items-center justify-center font-bold text-xl shadow-inner border border-recloud-200">
                   {selectedPayslipEmp.name.substring(0,2).toUpperCase()}
