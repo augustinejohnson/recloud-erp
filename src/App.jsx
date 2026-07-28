@@ -183,6 +183,7 @@ export default function App() {
   const [b2bOrders, setB2BOrders] = useState([]);
   const [payslipPeriod, setPayslipPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [payslipEndPeriod, setPayslipEndPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [archiveSearch, setArchiveSearch] = useState('');
   const [payslipTaxRate, setPayslipTaxRate] = useState(20);
   const [payslipLineItems, setPayslipLineItems] = useState([]);
 
@@ -1933,9 +1934,14 @@ export default function App() {
                     Leave & Absence
                   </button>
                   {(currentUser?.role === 'admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'hr_manager') && (
-                    <button onClick={() => setHrTab('payroll')} className={`pb-2 md:pb-3 px-1.5 md:px-2 text-[11px] md:text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${hrTab === 'payroll' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                      Payroll
-                    </button>
+                    <>
+                      <button onClick={() => setHrTab('payroll')} className={`pb-2 md:pb-3 px-1.5 md:px-2 text-[11px] md:text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${hrTab === 'payroll' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                        Payroll
+                      </button>
+                      <button onClick={() => setHrTab('payslips')} className={`pb-2 md:pb-3 px-1.5 md:px-2 text-[11px] md:text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${hrTab === 'payslips' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                        Payslip Archive
+                      </button>
+                    </>
                   )}
                   <button onClick={() => setHrTab('recruitment')} className={`pb-3 px-2 text-sm font-bold border-b-2 transition-colors ${hrTab === 'recruitment' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                     Recruitment ATS
@@ -2251,6 +2257,69 @@ export default function App() {
                             </td>
                           </tr>
                         ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : hrTab === 'payslips' ? (
+                /* Payslip Archive UI */
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-xl shadow-indigo-900/5 border border-white/50 overflow-hidden min-h-[300px] animate-in fade-in slide-in-from-bottom-2 duration-300 relative z-10">
+                  <div className="p-8 border-b border-white/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-indigo-50/20">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><FolderOpen className="w-5 h-5 text-recloud-600" /> Payslip Archive</h3>
+                      <p className="text-xs text-slate-500 mt-1">View and reprint historical payslips.</p>
+                    </div>
+                    <div className="relative w-full md:w-64">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input type="text" placeholder="Search employee or period..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-recloud-500 focus:ring-1 focus:ring-recloud-500 transition-all" />
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-max text-left text-sm whitespace-nowrap">
+                      <thead className="bg-slate-50/50 text-slate-500 font-medium border-b border-slate-100">
+                        <tr>
+                          <th className="px-6 py-4">Date Generated</th>
+                          <th className="px-6 py-4">Employee</th>
+                          <th className="px-6 py-4">Period</th>
+                          <th className="px-6 py-4">Net Pay</th>
+                          <th className="px-6 py-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {payslips.filter(p => {
+                          const emp = employees.find(e => e.id === p.employeeId);
+                          const searchStr = archiveSearch.toLowerCase();
+                          return (emp?.name || '').toLowerCase().includes(searchStr) || (p.period || '').toLowerCase().includes(searchStr);
+                        }).sort((a,b) => new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt) - new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt)).map(ps => {
+                          const emp = employees.find(e => e.id === ps.employeeId);
+                          return (
+                            <tr key={ps.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4">
+                                {ps.createdAt?.seconds ? new Date(ps.createdAt.seconds * 1000).toLocaleDateString() : (ps.createdAt ? new Date(ps.createdAt).toLocaleDateString() : '-')}
+                              </td>
+                              <td className="px-6 py-4 font-bold text-slate-700">
+                                {emp?.name || 'Unknown'}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-medium">{ps.period}</span>
+                              </td>
+                              <td className="px-6 py-4 font-mono font-medium text-slate-700">
+                                {ps.currency}{ps.netPay?.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button onClick={() => downloadPayslipPDF(ps)} className="px-3 py-1.5 text-xs font-bold text-recloud-600 bg-recloud-50 hover:bg-recloud-100 rounded-lg transition-colors flex items-center justify-center gap-1 ml-auto">
+                                  <Download className="w-3.5 h-3.5"/> Print / PDF
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {payslips.length === 0 && (
+                          <tr>
+                            <td colSpan="5" className="px-6 py-8 text-center text-slate-400">No payslips generated yet.</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
