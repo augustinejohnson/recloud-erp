@@ -736,7 +736,7 @@ export default function InventoryModule({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-auto lg:h-96">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
                 <h3 className="font-bold text-slate-800 mb-6">Stock Value by Category</h3>
-                <div className="flex-1 min-h-0">
+                <div className="flex-1 min-h-[300px] lg:min-h-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={categories.map(c => ({ 
                       name: c || 'Uncategorized', 
