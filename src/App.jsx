@@ -186,6 +186,8 @@ export default function App() {
   const [archiveSearch, setArchiveSearch] = useState('');
   const [payslipTaxRate, setPayslipTaxRate] = useState(20);
   const [payslipLineItems, setPayslipLineItems] = useState([]);
+  const [newLineItem, setNewLineItem] = useState({ type: 'Earning', description: '', date: '', amount: '' });
+  const [isAddingLineItem, setIsAddingLineItem] = useState(false);
 
   const [filterDept, setFilterDept] = useState('All Departments');
   const [filterBranch, setFilterBranch] = useState('');
@@ -3035,25 +3037,46 @@ export default function App() {
               {/* Dynamic Line Items Section */}
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-xs font-semibold text-slate-700">Custom Line Items</label>
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    const desc = window.prompt('Earning Description (e.g. Q3 Bonus):');
-                    if (!desc) return;
-                    const date = window.prompt('Date (Optional, e.g. 15-Aug or leave blank):');
-                    const amount = window.prompt(`Amount in ${payslipCurrency}:`);
-                    if (!amount || isNaN(amount)) return;
-                    setPayslipLineItems([...payslipLineItems, { id: Date.now(), description: desc, date: date || '', type: 'Earning', amount: Number(amount) }]);
-                  }} className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">+ Add Earning</button>
-                  <button onClick={() => {
-                    const desc = window.prompt('Deduction Description (e.g. Health Insurance):');
-                    if (!desc) return;
-                    const date = window.prompt('Date (Optional, e.g. 15-Aug or leave blank):');
-                    const amount = window.prompt(`Amount in ${payslipCurrency}:`);
-                    if (!amount || isNaN(amount)) return;
-                    setPayslipLineItems([...payslipLineItems, { id: Date.now(), description: desc, date: date || '', type: 'Deduction', amount: Number(amount) }]);
-                  }} className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">+ Add Deduction</button>
-                </div>
+                {!isAddingLineItem && (
+                  <div className="flex gap-2">
+                    <button onClick={() => { setIsAddingLineItem(true); setNewLineItem({ type: 'Earning', description: '', date: '', amount: '' }); }} className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">+ Add Earning</button>
+                    <button onClick={() => { setIsAddingLineItem(true); setNewLineItem({ type: 'Deduction', description: '', date: '', amount: '' }); }} className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">+ Add Deduction</button>
+                  </div>
+                )}
               </div>
+              
+              {isAddingLineItem && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-wrap gap-2 items-end mb-4">
+                  <div className="flex-1 min-w-[100px]">
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Type</label>
+                    <select value={newLineItem.type} onChange={e => setNewLineItem({...newLineItem, type: e.target.value})} className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-recloud-500 bg-white">
+                      <option value="Earning">Earning (+)</option>
+                      <option value="Deduction">Deduction (-)</option>
+                    </select>
+                  </div>
+                  <div className="flex-[2] min-w-[120px]">
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Description</label>
+                    <input type="text" value={newLineItem.description} onChange={e => setNewLineItem({...newLineItem, description: e.target.value})} placeholder="e.g. Overtime" className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-recloud-500 bg-white" />
+                  </div>
+                  <div className="flex-1 min-w-[110px]">
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Date (Optional)</label>
+                    <input type="date" value={newLineItem.date} onChange={e => setNewLineItem({...newLineItem, date: e.target.value})} className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-recloud-500 bg-white" />
+                  </div>
+                  <div className="flex-1 min-w-[80px]">
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Amount</label>
+                    <input type="number" min="0" step="any" value={newLineItem.amount} onChange={e => setNewLineItem({...newLineItem, amount: e.target.value})} placeholder="0.00" className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-recloud-500 bg-white" />
+                  </div>
+                  <div className="flex gap-1 w-full mt-1">
+                    <button onClick={() => {
+                      if (!newLineItem.description || !newLineItem.amount) return;
+                      setPayslipLineItems([...payslipLineItems, { ...newLineItem, id: Date.now(), amount: Number(newLineItem.amount) }]);
+                      setNewLineItem({ type: 'Earning', description: '', date: '', amount: '' });
+                      setIsAddingLineItem(false);
+                    }} className="flex-1 px-3 py-1.5 bg-recloud-600 text-white rounded text-xs font-bold hover:bg-recloud-700">Save Item</button>
+                    <button onClick={() => setIsAddingLineItem(false)} className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300"><X className="w-4 h-4"/></button>
+                  </div>
+                </div>
+              )}
 
               {payslipLineItems.length > 0 && (
                 <div className="mb-4 space-y-1">
