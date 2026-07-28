@@ -761,9 +761,9 @@ export default function App() {
       doc.setTextColor(30, 41, 59); // slate-800
       doc.text(tenantConfig?.companyName || 'Recloud Enterprise', 14, 20);
       
-      doc.setFontSize(10);
+      doc.setFontSize(12);
       doc.setTextColor(100, 116, 139); // slate-500
-      doc.text('Official Payslip Document', 14, 28);
+      doc.text('Statement of Account / Payslip', 14, 28);
 
       if (tenantConfig?.address) {
         doc.setFontSize(8);
@@ -771,12 +771,21 @@ export default function App() {
         doc.text(addressLines, 14, 34);
       }
       
+      // Document Date
+      let issueDate = new Date().toLocaleDateString();
+      if (ps.createdAt && ps.createdAt.seconds) {
+        issueDate = new Date(ps.createdAt.seconds * 1000).toLocaleDateString();
+      } else if (typeof ps.createdAt === 'string') {
+        issueDate = new Date(ps.createdAt).toLocaleDateString();
+      }
+
       // Employee Details
       doc.setFontSize(12);
       doc.setTextColor(30, 41, 59);
-      doc.text(`Employee: ${ps.employeeName}`, 14, 45);
-      doc.text(`Period: ${ps.period}`, 14, 52);
-      // Safe fallbacks for older payslips
+      doc.text(`Employee: ${ps.employeeName}`, 14, 48);
+      doc.text(`Period: ${ps.period}`, 14, 55);
+      doc.text(`Issue Date: ${issueDate}`, 14, 62);
+      
       const currency = ps.currency || '$';
       const getPdfCurrency = (sym) => {
         if (sym === '₦') return 'NGN ';
@@ -790,36 +799,75 @@ export default function App() {
       const taxAmt = ps.taxAmount !== undefined ? ps.taxAmount : ((ps.grossAmount || 0) - (ps.netAmount || 0));
       const taxRate = ps.taxRate !== undefined ? ps.taxRate : 20;
       
-      // Table Data
-      const tableData = [];
-      tableData.push(['Base Salary', 'Earning', `${pdfCurrency}${Number(baseAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      let currentY = 75;
+
+      // --- ADDITIONS TABLE ---
+      doc.setFontSize(14);
+      doc.setTextColor(22, 163, 74); // green-600
+      doc.text('Additions (Earnings)', 14, currentY);
       
+      const additionsData = [];
+      additionsData.push(['Base Salary', `${pdfCurrency}${Number(baseAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      
+      let totalAdditions = Number(baseAmt);
+
       if (ps.lineItems && ps.lineItems.length > 0) {
-        ps.lineItems.forEach(item => {
-          tableData.push([item.description, item.type, `${item.type === 'Earning' ? '' : '-'}${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+        ps.lineItems.filter(item => item.type === 'Earning').forEach(item => {
+          totalAdditions += Number(item.amount);
+          additionsData.push([item.description, `${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
         });
       }
       
-      tableData.push([`Income Tax (${taxRate}%)`, 'Deduction', `-${pdfCurrency}${Number(taxAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      additionsData.push(['Total Additions', `${pdfCurrency}${totalAdditions.toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
 
-      // Generate Table
       autoTable(doc, {
-        startY: 65,
-        head: [['Description', 'Type', 'Amount']],
-        body: tableData,
+        startY: currentY + 5,
+        head: [['Description', 'Amount']],
+        body: additionsData,
         theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229] }, // recloud-600
+        headStyles: { fillColor: [22, 163, 74] }, // green header
         styles: { font: 'helvetica', fontSize: 10 },
+        columnStyles: { 1: { halign: 'right' } }
       });
+
+      currentY = doc.lastAutoTable.finalY + 15;
+
+      // --- DEDUCTIONS TABLE ---
+      doc.setFontSize(14);
+      doc.setTextColor(220, 38, 38); // red-600
+      doc.text('Deductions', 14, currentY);
+      
+      const deductionsData = [];
+      let totalDeductions = Number(taxAmt);
+      
+      if (ps.lineItems && ps.lineItems.length > 0) {
+        ps.lineItems.filter(item => item.type === 'Deduction').forEach(item => {
+          totalDeductions += Number(item.amount);
+          deductionsData.push([item.description, `${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+        });
+      }
+      deductionsData.push([`Income Tax (${taxRate}%)`, `${pdfCurrency}${Number(taxAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      deductionsData.push(['Total Deductions', `${pdfCurrency}${totalDeductions.toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Description', 'Amount']],
+        body: deductionsData,
+        theme: 'striped',
+        headStyles: { fillColor: [220, 38, 38] }, // red header
+        styles: { font: 'helvetica', fontSize: 10 },
+        columnStyles: { 1: { halign: 'right' } }
+      });
+
+      currentY = doc.lastAutoTable.finalY + 15;
       
       // Totals
-      const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY : 65;
-      doc.setFontSize(14);
+      doc.setFontSize(16);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(22, 163, 74); // green-600
-      doc.text(`Net Pay: ${pdfCurrency}${Number(ps.netAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 14, finalY + 15);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`Net Pay / Final Amount: ${pdfCurrency}${Number(ps.netAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`, 14, currentY);
       
-      doc.save(`Payslip_${ps.employeeName}_${ps.period}.pdf`);
+      doc.save(`Statement_of_Account_${ps.employeeName}_${ps.period}.pdf`);
     } catch (error) {
       console.error("PDF Generation Error:", error);
       alert("There was an error generating the PDF. Please try generating a new payslip first.");
