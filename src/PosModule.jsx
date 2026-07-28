@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, User, Plus, Minus, Trash2, Search, Package, CheckCircle2, AlertCircle, Banknote, PauseCircle, CreditCard, Receipt } from 'lucide-react';
+import { ShoppingCart, User, Plus, Minus, Trash2, Search, Package, CheckCircle2, AlertCircle, Banknote, PauseCircle, CreditCard, Receipt, PlayCircle } from 'lucide-react';
 import { collection, query, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -64,7 +64,8 @@ export default function PosModule({ currentTenant, currentUser }) {
       setCart(cart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
     } else {
       if (availableStock < 1) return alert('Out of stock!');
-      setCart([...cart, { ...product, quantity: 1, availableStock }]);
+      const resolvedPrice = Number(product.price || product.priceWholesale || product.priceRetail || 0);
+      setCart([...cart, { ...product, price: resolvedPrice, quantity: 1, availableStock }]);
     }
   };
 
@@ -81,7 +82,21 @@ export default function PosModule({ currentTenant, currentUser }) {
   };
 
   const removeFromCart = (id) => setCart(cart.filter(item => item.id !== id));
-  const holdCart = () => alert('Cart on hold functionality not fully implemented.');
+  
+  const holdCart = () => {
+    if (cart.length === 0) return;
+    setHeldCarts([...heldCarts, { id: Date.now(), items: [...cart], customer: selectedCustomer, timestamp: new Date().toISOString() }]);
+    setCart([]);
+    setSelectedCustomer(null);
+  };
+
+  const resumeCart = (heldCartId) => {
+    const hc = heldCarts.find(c => c.id === heldCartId);
+    if (!hc) return;
+    setCart(hc.items);
+    if (hc.customer) setSelectedCustomer(hc.customer);
+    setHeldCarts(heldCarts.filter(c => c.id !== heldCartId));
+  };
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const total = cartTotal - (cartTotal * (Number(discountPercent)||0) / 100) + (cartTotal * (Number(taxPercent)||0) / 100);
 
@@ -101,14 +116,14 @@ export default function PosModule({ currentTenant, currentUser }) {
       const invRef = collection(db, `organizations/${currentTenant}/invoices`);
       const invoiceData = {
         customerName: selectedCustomer ? selectedCustomer.name : (manualCustomerName || 'Walk-in'),
-        customerPhone: selectedCustomer ? selectedCustomer.phone : manualCustomerPhone,
+        customerPhone: selectedCustomer ? (selectedCustomer.phone || '') : (manualCustomerPhone || ''),
         items: cart,
-        totalAmount: cartTotal,
+        totalAmount: total,
         paymentMethod: paymentMethod,
         splitAmounts: paymentMethod === 'Split' ? splitAmounts : null,
         date: new Date().toISOString(),
         timestamp: serverTimestamp(),
-        createdBy: currentUser.name,
+        createdBy: currentUser?.name || 'Staff',
         status: 'Paid',
         type: 'Sales Receipt'
       };
@@ -117,7 +132,7 @@ export default function PosModule({ currentTenant, currentUser }) {
       // Deduct stock properly
       for (const item of cart) {
         if (item.id) {
-          const prodRef = doc(db, `organizations/${currentTenant}/inventory`, item.id);
+          const prodRef = doc(db, `organizations/${currentTenant}/products`, item.id);
           
           if (currentUser?.warehouseId) {
              const currentBranchStock = Number(item.stockByWarehouse?.[currentUser.warehouseId] || 0);

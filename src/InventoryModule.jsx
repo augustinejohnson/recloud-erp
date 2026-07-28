@@ -44,6 +44,7 @@ export default function InventoryModule({
   const [isCreateBranchOrderOpen, setIsCreateBranchOrderOpen] = useState(false);
   const [isBulkReceiveOpen, setIsBulkReceiveOpen] = useState(false);
   const [selectedB2BOrder, setSelectedB2BOrder] = useState(null);
+  const [editWarehouseData, setEditWarehouseData] = useState(null);
 
   // Form states
   const initialProductState = { name: '', genericName: '', description: '', category: '', subCategory: '', sku: '', costPrice: '', priceStaff: '', priceDistributor: '', priceWholesale: '', batchNumber: '', expiryDate: '', image: '', stockByWarehouse: {}, minStockLevel: '10', supplierId: '', initialQty: '', initialWarehouseId: '' };
@@ -180,6 +181,10 @@ export default function InventoryModule({
         alert("Source and destination cannot be the same.");
         return;
       }
+      if (!transferForm.fromWarehouseId || !transferForm.toWarehouseId) {
+        alert('Please select both source and destination warehouses.');
+        return;
+      }
 
       const prod = products.find(p => p.id === transferForm.productId);
       if (!prod) return;
@@ -291,7 +296,7 @@ export default function InventoryModule({
       const prod = products.find(p => p.id === movement.productId);
       if (!prod) return;
 
-      const reverseType = movement.type === 'in' ? 'out' : 'in';
+      const reverseType = movement.type === 'in' ? 'out' : movement.type === 'out' ? 'in' : movement.type === 'transfer-in' ? 'transfer-out' : movement.type === 'transfer-out' ? 'transfer-in' : (movement.type === 'in' ? 'out' : 'in');
       const qty = Number(movement.qty);
       const currentStock = Number(prod.stockByWarehouse?.[movement.warehouseId] || 0);
       const newStock = reverseType === 'in' ? currentStock + qty : currentStock - qty;
@@ -356,6 +361,8 @@ export default function InventoryModule({
         const currentStock = Number(prod.stockByWarehouse?.[targetWarehouse] || 0);
         const newStock = currentStock + qty;
 
+        const monthIndex = ['January','February','March','April','May','June','July','August','September','October','November','December'].indexOf(bulkReceiveForm.month) + 1;
+
         await addStockMovement({
           productId, 
           type: 'in', 
@@ -364,7 +371,7 @@ export default function InventoryModule({
           note: `Bulk Receive ${bulkReceiveForm.waybill ? 'INV: '+bulkReceiveForm.waybill : ''}`, 
           previousStock: currentStock, 
           newStock, 
-          date: new Date(`${bulkReceiveForm.year}-${bulkReceiveForm.month}-${bulkReceiveForm.day}`).toISOString()
+          date: new Date(`${bulkReceiveForm.year}-${String(monthIndex).padStart(2,'0')}-${String(bulkReceiveForm.day).padStart(2,'0')}`).toISOString()
         }, currentTenant);
 
         const updatedStockByWarehouse = { ...(prod.stockByWarehouse || {}), [targetWarehouse]: newStock };
@@ -788,7 +795,7 @@ export default function InventoryModule({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(searchQuery.toLowerCase())).map(product => (
+              {products.filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || p.sku?.toLowerCase().includes(searchQuery.toLowerCase())).map(product => (
                 <div key={product.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 hover:border-recloud-300 transition-all flex flex-col group relative">
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {currentUser?.role === 'admin' && (
@@ -1469,7 +1476,7 @@ export default function InventoryModule({
                     </tr>
                   </thead>
                   <tbody>
-                    {products.filter(p => p.name.toLowerCase().includes(bulkPriceSearchQuery.toLowerCase()) || p.category?.toLowerCase().includes(bulkPriceSearchQuery.toLowerCase())).map(p => (
+                    {products.filter(p => (p.name || '').toLowerCase().includes(bulkPriceSearchQuery.toLowerCase()) || p.category?.toLowerCase().includes(bulkPriceSearchQuery.toLowerCase())).map(p => (
                       <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/50">
                         <td className="p-3">
                           <input type="checkbox" checked={selectedBulkProducts.has(p.id)} onChange={(e) => {

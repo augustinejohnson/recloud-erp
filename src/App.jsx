@@ -2172,19 +2172,19 @@ export default function App() {
                             <td className="px-6 py-4 font-semibold text-slate-800">{emp.name}</td>
                             <td className="px-6 py-4 text-slate-500">{emp.role}</td>
                             <td className="px-6 py-4 font-mono font-medium text-slate-700">
-                              {emp.salary ? `$${Number(emp.salary).toLocaleString()}` : <span className="text-slate-400 italic">Not set</span>}
+                              {emp.salary != null && emp.salary !== '' ? `$${Number(emp.salary).toLocaleString()}` : <span className="text-slate-400 italic">Not set</span>}
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="flex justify-end gap-2">
                                 <button onClick={() => {
                                   const amount = window.prompt(`Enter new annual salary for ${emp.name} (Numbers only):`, emp.salary || '');
                                   if (amount && !isNaN(amount)) {
-                                    updateEmployee(emp.id, { salary: Number(amount) }).then(fetchEmployees);
+                                    updateEmployee(emp.id, { salary: Number(amount) }, currentTenant).then(fetchEmployees);
                                   }
                                 }} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">Set Salary</button>
                                 
                                 <button onClick={() => {
-                                  if (!emp.salary) {
+                                  if (emp.salary == null || emp.salary === '') {
                                     alert('Please set a base salary first before generating a payslip.');
                                     return;
                                   }
@@ -2647,16 +2647,20 @@ export default function App() {
                 
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 mb-6">
                   <h4 className="font-bold text-sm text-slate-800 mb-3">Share Document with HR</h4>
-                  <form onSubmit={(e) => handleUploadDocument(e, currentUser.id, 'Staff')} className="flex flex-col md:flex-row gap-3">
-                    <input required type="text" placeholder="Document Name (e.g. Passport)" value={newDoc.name} onChange={e => setNewDoc({...newDoc, name: e.target.value})} className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
-                    <select value={newDoc.type} onChange={e => setNewDoc({...newDoc, type: e.target.value})} className="text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none bg-white">
-                      <option>Personal ID</option>
-                      <option>Certificate</option>
-                      <option>Tax Form</option>
-                      <option>Other</option>
-                    </select>
-                    <input required type="file" onChange={handleFileChange} className="flex-1 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-recloud-50 file:text-recloud-700 hover:file:bg-recloud-100"/>
-                    <button type="submit" className="bg-recloud-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-recloud-700 transition-colors">Upload</button>
+                  <form onSubmit={(e) => handleUploadDocument(e, currentUser.id, 'Staff')} className="flex flex-col gap-3">
+                    <div className="flex flex-col md:flex-row gap-3">
+                      <input required type="text" placeholder="Document Name (e.g. Passport)" value={newDoc.name} onChange={e => setNewDoc({...newDoc, name: e.target.value})} className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
+                      <select value={newDoc.type} onChange={e => setNewDoc({...newDoc, type: e.target.value})} className="text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none bg-white">
+                        <option>Personal ID</option>
+                        <option>Certificate</option>
+                        <option>Tax Form</option>
+                        <option>Other</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-3 items-center">
+                      <input required type="file" onChange={handleFileChange} className="w-full md:flex-1 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-recloud-50 file:text-recloud-700 hover:file:bg-recloud-100"/>
+                      <button type="submit" className="w-full md:w-auto bg-recloud-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-recloud-700 transition-colors whitespace-nowrap">Upload</button>
+                    </div>
                   </form>
                 </div>
 
@@ -2995,10 +2999,10 @@ export default function App() {
                   lineItems: payslipLineItems,
                   grossAmount: taxableGross,
                   netAmount: netPay
-                });
+                }, currentTenant);
                 
                 setIsPayslipModalOpen(false);
-                fetchPayslips();
+                fetchData(currentTenant);
                 alert(`Official Payslip generated and saved!`);
               }} className="w-full bg-recloud-600 hover:bg-recloud-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-recloud-500/20 transition-all transform hover:scale-[1.02]">
                 Issue Official Payslip
@@ -3154,7 +3158,7 @@ export default function App() {
       {/* EMPLOYEE PROFILE MODAL */}
       {selectedProfile && (
         <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50 relative">
               <div className="flex gap-4 items-center w-full pr-8">
                 <div className="w-16 h-16 rounded-full bg-recloud-100 text-recloud-700 flex items-center justify-center font-bold text-2xl border-4 border-white shadow-md flex-shrink-0 overflow-hidden relative group">
@@ -3228,11 +3232,12 @@ export default function App() {
               </button>
             </div>
             
-            <div className="flex border-b border-slate-200">
+            <div className="flex border-b border-slate-200 shrink-0">
               <button onClick={() => setProfileTab('overview')} className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${profileTab === 'overview' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Overview</button>
               <button onClick={() => setProfileTab('documents')} className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${profileTab === 'documents' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Documents</button>
               <button onClick={() => setProfileTab('performance')} className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${profileTab === 'performance' ? 'border-recloud-600 text-recloud-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Performance</button>
             </div>
+            <div className="flex-1 overflow-y-auto">
             
             {profileTab === 'overview' && (
               <div className="p-6 space-y-6 animate-in fade-in">
@@ -3363,7 +3368,7 @@ export default function App() {
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                   <h4 className="font-bold text-sm text-slate-800 mb-3">Upload Document to Vault</h4>
                   <form onSubmit={(e) => handleUploadDocument(e, selectedProfile.id, 'HR Admin')} className="flex flex-col gap-3">
-                    <div className="flex gap-3">
+                    <div className="flex flex-col md:flex-row gap-3">
                       <input required type="text" placeholder="Document Name (e.g. Passport)" value={newDoc.name} onChange={e => setNewDoc({...newDoc, name: e.target.value})} className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" />
                       <select value={newDoc.type} onChange={e => setNewDoc({...newDoc, type: e.target.value})} className="text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none bg-white">
                         <option>Contract</option>
@@ -3372,9 +3377,9 @@ export default function App() {
                         <option>Tax Form</option>
                       </select>
                     </div>
-                    <div className="flex gap-3 items-center">
-                      <input required type="file" onChange={handleFileChange} className="flex-1 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-recloud-50 file:text-recloud-700 hover:file:bg-recloud-100"/>
-                      <button type="submit" className="bg-slate-800 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 transition-colors whitespace-nowrap">Upload File</button>
+                    <div className="flex flex-col md:flex-row gap-3 items-center">
+                      <input required type="file" onChange={handleFileChange} className="w-full md:flex-1 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-recloud-50 file:text-recloud-700 hover:file:bg-recloud-100"/>
+                      <button type="submit" className="w-full md:w-auto bg-slate-800 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 transition-colors whitespace-nowrap">Upload File</button>
                     </div>
                   </form>
                 </div>
@@ -3456,6 +3461,7 @@ export default function App() {
 
           
 
+            </div>
           </div>
         </div>
       )}

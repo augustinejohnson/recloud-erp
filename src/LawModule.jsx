@@ -105,6 +105,7 @@ export default function LawModule({ currentTenant, currentUser, customers = [], 
   const handleEditProject = () => {
     if (!activeProject) return;
     setEditingProjectData({ 
+      id: activeProject.id,
       name: activeProject.name || '', 
       description: activeProject.description || '', 
       clientId: activeProject.clientId || '', 
@@ -647,10 +648,6 @@ export default function LawModule({ currentTenant, currentUser, customers = [], 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Date</label>
                   <input type="date" value={editingProjectData.startDate} onChange={e => setEditingProjectData({...editingProjectData, startDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Next Court Date</label>
-                  <input type="date" value={editingProjectData.courtDate} onChange={e => setEditingProjectData({...editingProjectData, courtDate: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-medium text-slate-800" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

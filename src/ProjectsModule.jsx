@@ -121,6 +121,7 @@ export default function ProjectsModule({ currentTenant, currentUser, customers =
   const handleEditProject = () => {
     if (!activeProject) return;
     setEditingProjectData({ 
+      id: activeProject.id,
       name: activeProject.name || '', 
       description: activeProject.description || '', 
       clientId: activeProject.clientId || '', 

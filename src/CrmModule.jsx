@@ -8,14 +8,15 @@ import {
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell
 } from 'recharts';
-import { addCustomer, updateCustomer, deleteCustomer, addDeal, updateDealStatus, updateDeal, addInvoice, updateInvoiceStatus, updateInvoice, deleteInvoice, addEmployee, updateEmployee, deleteEmployee, createAuthUser, getProjects } from './firebase';
+import { addCustomer, updateCustomer, deleteCustomer, addDeal, updateDealStatus, updateDeal, deleteDeal, addInvoice, updateInvoiceStatus, updateInvoice, deleteInvoice, addEmployee, updateEmployee, deleteEmployee, createAuthUser, getProjects } from './firebase';
 
 export default function CrmModule({ 
-  customers, deals, invoices, employees = [], currentTenant, tenantConfig, currentUser, currentIndustry, refreshData 
+  customers = [], deals = [], invoices = [], employees = [], currentTenant, tenantConfig, currentUser, currentIndustry, refreshData 
 }) {
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, customers, deals, invoices
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [editingCustomer, setEditingCustomer] = useState(null);
   
   // Modals
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
@@ -217,13 +218,14 @@ export default function CrmModule({
   };
 
   const handleAddDealTask = async (deal) => {
-    const text = dealTaskInput[deal.id];
+    const text = newDealTaskTexts[deal.id];
     if (!text || !text.trim()) return;
     const newTask = { text, done: false, id: Date.now() };
     const updatedTasks = [...(deal.tasks || []), newTask];
     try {
       await updateDeal(deal.id, { tasks: updatedTasks }, currentTenant);
       setDealTaskInput({ ...dealTaskInput, [deal.id]: '' });
+      setNewDealTaskTexts({...newDealTaskTexts, [deal.id]: ''});
       refreshData();
     } catch (err) {
       console.error(err);
@@ -413,7 +415,7 @@ export default function CrmModule({
   };
 
   const handleDraftWithAI = () => {
-    setEmailSubject(`Follow-up: G4mg-Adamz Enterprise`);
+    setEmailSubject('Follow-up: ' + (tenantConfig?.companyName || 'Our Company'));
     setEmailBody(`Hi ${selectedCustomer?.contactPerson || selectedCustomer?.name},\n\nI hope this email finds you well. I'm reaching out to follow up on our previous conversation regarding your recent orders.\n\nPlease let me know if there's anything else we can assist you with this week.\n\nBest regards,\n${currentUser?.name || 'Your Rep'}`);
   };
 
@@ -640,16 +642,16 @@ export default function CrmModule({
                     <td className="p-4 text-sm text-slate-600">{customer.email || '—'}</td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => { setSelectedCustomer(customer); setIsEmailModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors tooltip" title="Send Email">
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedCustomer(customer); setIsEmailModalOpen(true); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors tooltip" title="Send Email">
                           <Mail className="w-4 h-4" />
                         </button>
-                        <button onClick={() => { setSelectedCustomer(customer); setIsPhoneModalOpen(true); }} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors tooltip" title="Log Call">
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedCustomer(customer); setIsPhoneModalOpen(true); }} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors tooltip" title="Log Call">
                           <Phone className="w-4 h-4" />
                         </button>
-                        <button onClick={() => { setEditingCustomer(customer); setIsAddCustomerOpen(true); }} className="p-2 text-slate-400 hover:text-recloud-600 hover:bg-recloud-50 rounded-lg transition-colors tooltip" title="Edit Customer">
+                        <button onClick={(e) => { e.stopPropagation(); setEditingCustomer(customer); setIsAddCustomerOpen(true); }} className="p-2 text-slate-400 hover:text-recloud-600 hover:bg-recloud-50 rounded-lg transition-colors tooltip" title="Edit Customer">
                           <Edit className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDeleteCustomer(customer.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors tooltip" title="Delete Customer">
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomer(customer.id) }} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors tooltip" title="Delete Customer">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -771,8 +773,8 @@ export default function CrmModule({
                         <div className="flex items-center justify-between border-t border-slate-100 pt-3">
                           <div className="flex -space-x-2">
                             {(deal.assignedTo || []).map((userId, idx) => (
-                              <div key={idx} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500" title={users.find(u => u.id === userId)?.name || userId}>
-                                {(users.find(u => u.id === userId)?.name || userId).substring(0, 1).toUpperCase()}
+                              <div key={idx} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500" title={employees.find(u => u.id === userId)?.name || userId}>
+                                {(employees.find(u => u.id === userId)?.name || userId).substring(0, 1).toUpperCase()}
                               </div>
                             ))}
                           </div>
@@ -900,7 +902,7 @@ export default function CrmModule({
                           </button>
 )} 
                           {(() => {
-                            const cust = selectedCustomer;
+                            const cust = customers.find(c => c.id === inv.customerId);
                             if (cust && cust.phone) {
                               const amount = Number(inv.amount || inv.totalAmount || 0).toLocaleString();
                               const msg = `Hello ${cust.name}, this is a reminder regarding Invoice #${inv.invoiceNumber || inv.id.substring(0,8)} for the amount of ${inv.currency || '$'}${amount}. You can view and pay it through your secure client portal.`;
@@ -1221,6 +1223,7 @@ export default function CrmModule({
                       setSelectedCustomer({ ...selectedCustomer, notes: updatedNotes });
                       setNewNoteText('');
                       setNewActivityType('Note');
+                      refreshData();
                     } catch (err) {
                       console.error(err);
                     }

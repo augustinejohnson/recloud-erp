@@ -631,6 +631,319 @@ export default function HrModule({
                           </div>
                           <div className="md:col-span-2">
                             <label className="block text-sm font-bold text-slate-700 mb-2">Account Name</label>
+</table>
+                  </div>
+                </div>
+              ) : hrTab === 'recruitment' ? (
+                /* ATS UI */
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-xl shadow-indigo-900/5 border border-white/50 overflow-hidden min-h-[300px] animate-in fade-in slide-in-from-bottom-2 duration-300 p-8 relative z-10">
+                  <div className="flex justify-between items-center mb-8">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Briefcase className="w-5 h-5 text-recloud-600" /> Applicant Tracking System</h3>
+                      <p className="text-xs text-slate-500 mt-1">Manage job applicants across the recruitment pipeline.</p>
+                    </div>
+                  </div>
+                  
+                  {/* Job Board Management */}
+                  <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 mb-8">
+                    <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Briefcase className="w-4 h-4 text-recloud-600"/> Public Job Postings</h4>
+                    
+                    <form onSubmit={handleAddJob} className="flex flex-wrap gap-3 items-end mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                      <div className="flex-1 min-w-[150px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Job Title</label>
+                        <input required type="text" value={newJob.title} onChange={e => setNewJob({...newJob, title: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="e.g. Senior Developer" />
+                      </div>
+                      <div className="w-[120px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Department</label>
+                        <select value={newJob.department} onChange={e => setNewJob({...newJob, department: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500 bg-white">
+                          <option>Operations</option>
+                          <option>Sales & Marketing</option>
+                          <option>IT & Engineering</option>
+                          <option>Finance & Legal</option>
+                          <option>Human Resources</option>
+                        </select>
+                      </div>
+                      <div className="w-[120px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Type</label>
+                        <select value={newJob.type} onChange={e => setNewJob({...newJob, type: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500 bg-white">
+                          <option>Full-time</option>
+                          <option>Part-time</option>
+                          <option>Contract</option>
+                        </select>
+                      </div>
+                      <div className="w-[120px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Location</label>
+                        <input required type="text" value={newJob.location} onChange={e => setNewJob({...newJob, location: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="Remote" />
+                      </div>
+                      <div className="w-full">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Description</label>
+                        <textarea required value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="Brief job description..." rows="2"></textarea>
+                      </div>
+                      <button type="submit" disabled={isLoading} className="bg-recloud-600 hover:bg-recloud-700 disabled:bg-slate-400 text-white font-bold py-2 px-6 rounded-lg text-sm shadow transition-all ml-auto">
+                        Post Job
+                      </button>
+                    </form>
+
+                    {jobs.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {jobs.map(job => (
+                          <div key={job.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                            <div>
+                              <h5 className="font-bold text-slate-800 text-sm">{job.title}</h5>
+                              <p className="text-xs text-slate-500 mb-2">{job.department} • {job.location}</p>
+                            </div>
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-2 py-1 rounded-md">Active</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <hr className="my-8 border-slate-100" />
+                  
+                  <div className="flex justify-between items-center mb-6">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2">Applicant Pipeline</h4>
+                  </div>
+
+                  {/* Add Applicant Form (Manual Entry) */}
+                  <form onSubmit={handleAddApplicant} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-wrap gap-3 items-end">
+                    <div className="flex-1 min-w-[150px]">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Applicant Name (Manual Entry)</label>
+                      <input required type="text" value={newApplicant.name} onChange={e => setNewApplicant({...newApplicant, name: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="John Doe" />
+                    </div>
+                    <div className="flex-1 min-w-[150px]">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Applied Role</label>
+                      <input required type="text" value={newApplicant.role} onChange={e => setNewApplicant({...newApplicant, role: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="Software Engineer" />
+                    </div>
+                    <div className="flex-1 min-w-[150px]">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Email</label>
+                      <input type="email" value={newApplicant.email} onChange={e => setNewApplicant({...newApplicant, email: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="john@email.com" />
+                    </div>
+                    <button type="submit" disabled={isLoading} className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-6 rounded-lg text-sm shadow transition-all">Add Manually</button>
+                  </form>
+
+                  {/* Kanban Board */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {['Applied', 'Interviewing', 'Offered', 'Hired'].map(status => (
+                      <div key={status} className="bg-slate-50 rounded-xl border border-slate-100 p-3 h-[400px] flex flex-col">
+                        <h4 className="font-bold text-slate-700 text-sm mb-3 flex justify-between items-center">
+                          {status} 
+                          <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs">{applicants.filter(a => a.status === status).length}</span>
+                        </h4>
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                          {applicants.filter(a => a.status === status).map(app => (
+                            <div key={app.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                              <p className="font-bold text-sm text-slate-800">{app.name}</p>
+                              <p className="text-xs text-slate-500 mb-2">{app.role}</p>
+                              <select 
+                                value={app.status}
+                                onChange={(e) => handleUpdateApplicantStatus(app.id, e.target.value)}
+                                className="w-full text-xs border border-slate-200 rounded py-1 px-2 text-slate-600 focus:outline-none"
+                              >
+                                <option value="Applied">Applied</option>
+                                <option value="Interviewing">Interviewing</option>
+                                <option value="Offered">Offered</option>
+                                <option value="Hired">Hire (Convert)</option>
+                                <option value="Rejected">Reject</option>
+                              </select>
+                            </div>
+                          ))}
+                          {applicants.filter(a => a.status === status).length === 0 && (
+                            <p className="text-center text-slate-400 text-xs italic mt-4">No applicants</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : hrTab === 'recruitment' ? (
+                /* ATS UI */
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-xl shadow-indigo-900/5 border border-white/50 overflow-hidden min-h-[300px] animate-in fade-in slide-in-from-bottom-2 duration-300 p-8 relative z-10">
+                  <div className="flex justify-between items-center mb-8">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Briefcase className="w-5 h-5 text-recloud-600" /> Applicant Tracking System</h3>
+                      <p className="text-xs text-slate-500 mt-1">Manage job applicants across the recruitment pipeline.</p>
+                    </div>
+                  </div>
+                  
+                  {/* Job Board Management */}
+                  <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 mb-8">
+                    <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Briefcase className="w-4 h-4 text-recloud-600"/> Public Job Postings</h4>
+                    
+                    <form onSubmit={handleAddJob} className="flex flex-wrap gap-3 items-end mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                      <div className="flex-1 min-w-[150px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Job Title</label>
+                        <input required type="text" value={newJob.title} onChange={e => setNewJob({...newJob, title: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="e.g. Senior Developer" />
+                      </div>
+                      <div className="w-[120px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Department</label>
+                        <select value={newJob.department} onChange={e => setNewJob({...newJob, department: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500 bg-white">
+                          <option>Operations</option>
+                          <option>Sales & Marketing</option>
+                          <option>IT & Engineering</option>
+                          <option>Finance & Legal</option>
+                          <option>Human Resources</option>
+                        </select>
+                      </div>
+                      <div className="w-[120px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Type</label>
+                        <select value={newJob.type} onChange={e => setNewJob({...newJob, type: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500 bg-white">
+                          <option>Full-time</option>
+                          <option>Part-time</option>
+                          <option>Contract</option>
+                        </select>
+                      </div>
+                      <div className="w-[120px]">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Location</label>
+                        <input required type="text" value={newJob.location} onChange={e => setNewJob({...newJob, location: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="Remote" />
+                      </div>
+                      <div className="w-full">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Description</label>
+                        <textarea required value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="Brief job description..." rows="2"></textarea>
+                      </div>
+                      <button type="submit" disabled={isLoading} className="bg-recloud-600 hover:bg-recloud-700 disabled:bg-slate-400 text-white font-bold py-2 px-6 rounded-lg text-sm shadow transition-all ml-auto">
+                        Post Job
+                      </button>
+                    </form>
+
+                    {jobs.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {jobs.map(job => (
+                          <div key={job.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                            <div>
+                              <h5 className="font-bold text-slate-800 text-sm">{job.title}</h5>
+                              <p className="text-xs text-slate-500 mb-2">{job.department} • {job.location}</p>
+                            </div>
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-2 py-1 rounded-md">Active</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <hr className="my-8 border-slate-100" />
+                  
+                  <div className="flex justify-between items-center mb-6">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2">Applicant Pipeline</h4>
+                  </div>
+
+                  {/* Add Applicant Form */}
+                  <form onSubmit={handleAddApplicant} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-wrap gap-3 items-end">
+                    <div className="flex-1 min-w-[150px]">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Applicant Name</label>
+                      <input required type="text" value={newApplicant.name} onChange={e => setNewApplicant({...newApplicant, name: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="John Doe" />
+                    </div>
+                    <div className="flex-1 min-w-[150px]">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Applied Role</label>
+                      <input required type="text" value={newApplicant.role} onChange={e => setNewApplicant({...newApplicant, role: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="Software Engineer" />
+                    </div>
+                    <div className="flex-1 min-w-[150px]">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">Email</label>
+                      <input type="email" value={newApplicant.email} onChange={e => setNewApplicant({...newApplicant, email: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-recloud-500" placeholder="john@email.com" />
+                    </div>
+                    <button type="submit" disabled={isLoading} className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-6 rounded-lg text-sm shadow transition-all">Add Manually</button>
+                  </form>
+
+                  {/* Kanban Board */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {['Applied', 'Interviewing', 'Offered', 'Hired'].map(status => (
+                      <div key={status} className="bg-slate-50 rounded-xl border border-slate-100 p-3 h-[400px] flex flex-col">
+                        <h4 className="font-bold text-slate-700 text-sm mb-3 flex justify-between items-center">
+                          {status} 
+                          <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs">{applicants.filter(a => a.status === status).length}</span>
+                        </h4>
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                          {applicants.filter(a => a.status === status).map(app => (
+                            <div key={app.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                              <p className="font-bold text-sm text-slate-800">{app.name}</p>
+                              <p className="text-xs text-slate-500 mb-2">{app.role}</p>
+                              <select 
+                                value={app.status}
+                                onChange={(e) => handleUpdateApplicantStatus(app.id, e.target.value)}
+                                className="w-full text-xs border border-slate-200 rounded py-1 px-2 text-slate-600 focus:outline-none"
+                              >
+                                <option value="Applied">Applied</option>
+                                <option value="Interviewing">Interviewing</option>
+                                <option value="Offered">Offered</option>
+                                <option value="Hired">Hire (Convert)</option>
+                                <option value="Rejected">Reject</option>
+                              </select>
+                            </div>
+                          ))}
+                          {applicants.filter(a => a.status === status).length === 0 && (
+                            <p className="text-center text-slate-400 text-xs italic mt-4">No applicants</p>
+                         ) : hrTab === 'settings' ? (
+                <div className="animate-in fade-in duration-500">
+                  <div className="flex justify-between items-center mb-6">
+                    <div>
+                      <h3 className="text-2xl font-bold text-slate-800 tracking-tight">Company Branding Settings</h3>
+                      <p className="text-slate-500 text-sm mt-1">Customize how your company appears on reports, payslips, and the public careers page.</p>
+                    </div>
+                  </div>
+                  
+                  {settingsMessage.text && (
+                    <div className={`mb-6 p-4 rounded-xl text-sm font-bold border ${settingsMessage.type === 'error' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
+                      {settingsMessage.text}
+                    </div>
+                  )}
+                  
+                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm max-w-2xl">
+                    <form onSubmit={handleSaveSettings} className="space-y-6">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Company Legal Name</label>
+                        <input required type="text" value={settingsForm.companyName} onChange={e => setSettingsForm({...settingsForm, companyName: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="Acme Corporation" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Company Logo</label>
+                        <input type="file" accept="image/*" onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            if (file.size > 1000000) {
+                              alert("File too large. Please upload an image under 1MB.");
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setSettingsForm({...settingsForm, logoUrl: reader.result});
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" />
+                        <p className="text-xs text-slate-400 mt-1">Upload a PNG or JPG image (Max 1MB).</p>
+                        {settingsForm.logoUrl && (
+                          <div className="mt-4 p-4 border border-slate-200 rounded-xl inline-block bg-slate-50 relative">
+                            <img src={settingsForm.logoUrl} alt="Logo Preview" className="h-12 object-contain" onError={(e) => e.target.style.display='none'} />
+                            <button type="button" onClick={() => setSettingsForm({...settingsForm, logoUrl: ''})} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Headquarters Address</label>
+                        <textarea rows="3" value={settingsForm.address} onChange={e => setSettingsForm({...settingsForm, address: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder={"123 Business Rd\nSuite 100\nCity, State, ZIP"}></textarea>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Contact Phone Number</label>
+                        <input type="text" value={settingsForm.phone} onChange={e => setSettingsForm({...settingsForm, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="+1 (555) 123-4567" />
+                      </div>
+                      <div className="pt-6 mt-6 border-t border-slate-200">
+                        <h4 className="text-lg font-bold text-slate-800 mb-4">Payment & Bank Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Bank Name</label>
+                            <input type="text" value={settingsForm.bankName} onChange={e => setSettingsForm({...settingsForm, bankName: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="Guaranty Trust Bank" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Account Number</label>
+                            <input type="text" value={settingsForm.accountNumber} onChange={e => setSettingsForm({...settingsForm, accountNumber: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="0123456789" />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Account Name</label>
                             <input type="text" value={settingsForm.accountName} onChange={e => setSettingsForm({...settingsForm, accountName: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="Company Enterprises Ltd" />
                           </div>
                         </div>
@@ -646,80 +959,23 @@ export default function HrModule({
                     </form>
                   </div>
 
-                  {/* Branch Locations Management */}
-                  <div className="mt-8 flex justify-between items-center mb-6">
-                    <div>
-                      <h3 className="text-2xl font-bold text-slate-800 tracking-tight">Branch Locations</h3>
-                      <p className="text-slate-500 text-sm mt-1">Manage physical branches and offices. This automatically syncs with Inventory warehouses.</p>
-                    </div>
-                  </div>
-                  
                   <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm max-w-4xl">
-                    <div className="mb-6 h-[400px] w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner z-0 relative">
-                      <ErrorBoundary>
-                        <MapContainer center={[20, 0]} zoom={2} style={{ height: '100%', width: '100%', zIndex: 0 }}>
-                          <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          />
-                          <LocationSelector newBranch={newBranch} setNewBranch={setNewBranch} />
-                          {warehouses.map(w => w.lat && w.lng ? (
-                            <Marker key={w.id} position={[Number(w.lat), Number(w.lng)]}>
-                              <Popup>
-                                <strong>{w.name}</strong><br/>
-                                <span className="text-xs text-slate-500">{w.location}</span>
-                              </Popup>
-                            </Marker>
-                          ) : null)}
-                        </MapContainer>
-                      </ErrorBoundary>
-                      <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 text-xs font-semibold text-slate-600 z-[400] pointer-events-none">
-                        Click anywhere on the map to place a pin
-                      </div>
-                    </div>
-                    
-                    <form onSubmit={handleAddBranch} className="space-y-4 mb-8 pb-8 border-b border-slate-100">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-1">Branch Name</label>
-                          <input required type="text" value={newBranch.name} onChange={e => setNewBranch({...newBranch, name: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="e.g. Lagos HQ" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-1">Geo-Location / Address</label>
-                          <input type="text" value={newBranch.location} onChange={e => setNewBranch({...newBranch, location: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none transition-all" placeholder="e.g. Ikeja, Lagos State" />
-                        </div>
-                      </div>
-                      <button type="submit" disabled={isLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm">
-                        <Plus className="w-4 h-4" /> Add Branch
-                      </button>
-                    </form>
-
                     <div className="space-y-3">
-                      <h4 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wider">Active Branches ({warehouses.length})</h4>
-                      {warehouses.length === 0 ? (
-                        <p className="text-slate-400 text-sm italic p-4 bg-slate-50 rounded-xl border border-slate-100">No branches added yet. Create one above.</p>
+                      <h4 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wider">Active Branches ({warehouses?.length || 0})</h4>
+                      {(!warehouses || warehouses.length === 0) ? (
+                        <p className="text-slate-400 text-sm italic p-4 bg-slate-50 rounded-xl border border-slate-100">No branches added yet. Add warehouses in the Inventory module to see them here.</p>
                       ) : (
                         warehouses.map(w => (
                           <div key={w.id} className="flex justify-between items-center p-4 rounded-xl border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all group">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                                <MapPin className="w-5 h-5" />
+                                <Briefcase className="w-5 h-5" />
                               </div>
                               <div>
                                 <p className="font-bold text-slate-800">{w.name} {w.lat && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono border border-slate-200">Map Pinned</span>}</p>
                                 <p className="text-xs text-slate-500">{w.location || 'No location specified'}</p>
                               </div>
                             </div>
-                            <button onClick={async () => {
-                              if(window.confirm(`Are you sure you want to delete ${w.name}? This will remove the branch for all employees and inventory items.`)) {
-                                setIsLoading(true);
-                                await deleteWarehouse(w.id, currentTenant);
-                                await fetchData(currentTenant);
-                                setIsLoading(false);
-                              }
-                            }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2" title="Delete Branch">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
                           </div>
                         ))
                       )}

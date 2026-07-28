@@ -542,6 +542,11 @@ export const updateDeal = async (dealId, updatedData, tenantId = "tenant_1") => 
   });
 };
 
+export const deleteDeal = async (dealId, tenantId = "tenant_1") => {
+  const ref = doc(db, `organizations/${tenantId}/deals`, dealId);
+  await deleteDoc(ref);
+};
+
 export const getInvoices = async (tenantId = "tenant_1") => {
   const col = collection(db, `organizations/${tenantId}/invoices`);
   const snapshot = await getDocs(col);

@@ -384,7 +384,7 @@ export default function AccountingModule({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {operatingLedger.sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
+            {[...operatingLedger].sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
               <tr key={entry.id} className="hover:bg-slate-50">
                 <td className="px-6 py-4 text-slate-600">{new Date(entry.date).toLocaleString()}</td>
                 <td className="px-6 py-4 font-mono text-xs text-slate-400">{entry.referenceId || '-'}</td>
@@ -495,7 +495,7 @@ export default function AccountingModule({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {trustLedger.sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
+            {[...trustLedger].sort((a,b) => new Date(b.date) - new Date(a.date)).map(entry => (
               <tr key={entry.id} className="hover:bg-slate-50">
                 <td className="px-6 py-4 text-slate-600">{new Date(entry.date).toLocaleString()}</td>
                 <td className="px-6 py-4 text-slate-800 font-medium">{entry.description}</td>
@@ -637,7 +637,7 @@ export default function AccountingModule({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {visibleExpenses.sort((a,b) => new Date(b.submittedAt) - new Date(a.submittedAt)).map(exp => (
+              {[...visibleExpenses].sort((a,b) => new Date(b.submittedAt) - new Date(a.submittedAt)).map(exp => (
                 <tr key={exp.id} className="hover:bg-slate-50">
                   <td className="px-6 py-4 text-slate-600">{new Date(exp.submittedAt).toLocaleDateString()}</td>
                   <td className="px-6 py-4 text-slate-800 font-medium">{exp.description}</td>

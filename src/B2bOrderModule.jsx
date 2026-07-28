@@ -60,6 +60,7 @@ export default function B2bOrderModule({ currentUser, products, currentTenant, t
         name: product.name,
         qty: 1,
         unitPrice: getPriceForUser(product),
+        costPrice: product.costPrice || product.priceCost || 0,
         image: product.image
       }];
     });

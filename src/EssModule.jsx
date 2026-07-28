@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, CalendarCheck, Receipt, FileText, Download, Briefcase, CheckCircle2 } from 'lucide-react';
+import { Clock, CalendarCheck, Receipt, FileText, Download, Briefcase, CheckCircle2, Banknote } from 'lucide-react';
 
 export default function EssModule({
   currentUser,
