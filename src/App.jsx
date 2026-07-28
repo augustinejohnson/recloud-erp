@@ -809,27 +809,35 @@ export default function App() {
       doc.text('Additions (Earnings)', 14, currentY);
       
       const additionsData = [];
-      additionsData.push(['Base Salary', `${pdfCurrency}${Number(baseAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      additionsData.push(['', 'Base Salary', `${pdfCurrency}${Number(baseAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
       
       let totalAdditions = Number(baseAmt);
 
       if (ps.lineItems && ps.lineItems.length > 0) {
         ps.lineItems.filter(item => item.type === 'Earning').forEach(item => {
           totalAdditions += Number(item.amount);
-          additionsData.push([item.description, `${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+          additionsData.push([item.date || '', item.description, `${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
         });
       }
       
-      additionsData.push(['Total Additions', `${pdfCurrency}${totalAdditions.toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      additionsData.push(['', 'Total Additions', `${pdfCurrency}${totalAdditions.toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
 
       autoTable(doc, {
         startY: currentY + 5,
-        head: [['Description', 'Amount']],
+        head: [['Date', 'Description', 'Amount']],
         body: additionsData,
         theme: 'striped',
         headStyles: { fillColor: [22, 163, 74] }, // green header
         styles: { font: 'helvetica', fontSize: 10 },
-        columnStyles: { 1: { halign: 'right' } }
+        columnStyles: { 
+          0: { cellWidth: 35 },
+          2: { halign: 'right' } 
+        },
+        didParseCell: function(data) {
+          if (data.section === 'head' && data.column.index === 2) {
+            data.cell.styles.halign = 'right';
+          }
+        }
       });
 
       currentY = doc.lastAutoTable.finalY + 15;
@@ -837,28 +845,36 @@ export default function App() {
       // --- DEDUCTIONS TABLE ---
       doc.setFontSize(14);
       doc.setTextColor(220, 38, 38); // red-600
-      doc.text('Deductions', 14, currentY);
-      
+      doc.text('Deductions', 14, currentY);      
       const deductionsData = [];
       let totalDeductions = Number(taxAmt);
       
       if (ps.lineItems && ps.lineItems.length > 0) {
         ps.lineItems.filter(item => item.type === 'Deduction').forEach(item => {
           totalDeductions += Number(item.amount);
-          deductionsData.push([item.description, `${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+          deductionsData.push([item.date || '', item.description, `${pdfCurrency}${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
         });
       }
-      deductionsData.push([`Income Tax (${taxRate}%)`, `${pdfCurrency}${Number(taxAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
-      deductionsData.push(['Total Deductions', `${pdfCurrency}${totalDeductions.toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      
+      deductionsData.push(['', `Tax Deduction (${taxRate}%)`, `${pdfCurrency}${Number(taxAmt).toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
+      deductionsData.push(['', 'Total Deductions', `${pdfCurrency}${totalDeductions.toLocaleString(undefined, {minimumFractionDigits: 2})}`]);
 
       autoTable(doc, {
         startY: currentY + 5,
-        head: [['Description', 'Amount']],
+        head: [['Date', 'Description', 'Amount']],
         body: deductionsData,
         theme: 'striped',
         headStyles: { fillColor: [220, 38, 38] }, // red header
         styles: { font: 'helvetica', fontSize: 10 },
-        columnStyles: { 1: { halign: 'right' } }
+        columnStyles: { 
+          0: { cellWidth: 35 },
+          2: { halign: 'right' } 
+        },
+        didParseCell: function(data) {
+          if (data.section === 'head' && data.column.index === 2) {
+            data.cell.styles.halign = 'right';
+          }
+        }
       });
 
       currentY = doc.lastAutoTable.finalY + 15;
@@ -3023,16 +3039,18 @@ export default function App() {
                   <button onClick={() => {
                     const desc = window.prompt('Earning Description (e.g. Q3 Bonus):');
                     if (!desc) return;
+                    const date = window.prompt('Date (Optional, e.g. 15-Aug or leave blank):');
                     const amount = window.prompt(`Amount in ${payslipCurrency}:`);
                     if (!amount || isNaN(amount)) return;
-                    setPayslipLineItems([...payslipLineItems, { id: Date.now(), description: desc, type: 'Earning', amount: Number(amount) }]);
+                    setPayslipLineItems([...payslipLineItems, { id: Date.now(), description: desc, date: date || '', type: 'Earning', amount: Number(amount) }]);
                   }} className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">+ Add Earning</button>
                   <button onClick={() => {
                     const desc = window.prompt('Deduction Description (e.g. Health Insurance):');
                     if (!desc) return;
+                    const date = window.prompt('Date (Optional, e.g. 15-Aug or leave blank):');
                     const amount = window.prompt(`Amount in ${payslipCurrency}:`);
                     if (!amount || isNaN(amount)) return;
-                    setPayslipLineItems([...payslipLineItems, { id: Date.now(), description: desc, type: 'Deduction', amount: Number(amount) }]);
+                    setPayslipLineItems([...payslipLineItems, { id: Date.now(), description: desc, date: date || '', type: 'Deduction', amount: Number(amount) }]);
                   }} className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">+ Add Deduction</button>
                 </div>
               </div>
@@ -3041,7 +3059,7 @@ export default function App() {
                 <div className="mb-4 space-y-1">
                   {payslipLineItems.map(item => (
                     <div key={item.id} className="flex justify-between items-center text-xs p-2 bg-slate-50 border border-slate-100 rounded-lg">
-                      <span className="font-medium text-slate-600">{item.description}</span>
+                      <span className="font-medium text-slate-600">{item.description} {item.date && <span className="text-slate-400 font-normal ml-1">({item.date})</span>}</span>
                       <div className="flex items-center gap-3">
                         <span className={`font-mono font-bold ${item.type === 'Earning' ? 'text-green-600' : 'text-red-500'}`}>
                           {item.type === 'Earning' ? '+' : '-'}{payslipCurrency}{item.amount.toLocaleString()}
