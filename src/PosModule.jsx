@@ -282,29 +282,31 @@ export default function PosModule({ currentTenant, currentUser }) {
             </div>
           ) : (
             cart.map(item => (
-              <div key={item.id} className="bg-white p-3 rounded-xl border border-slate-100 flex items-center justify-between hover:border-slate-200 transition-colors shadow-sm">
-                <div className="flex-1 min-w-0 pr-2">
+              <div key={item.id} className="bg-white p-3 rounded-xl border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-200 transition-colors shadow-sm">
+                <div className="flex-1 min-w-0 w-full">
                   <h4 className="font-bold text-slate-800 text-sm break-words">{item.name}</h4>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-recloud-600 font-bold">₦{Number(item.price || 0).toLocaleString()}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1 border border-slate-100">
-                  <button onClick={() => updateQuantity(item.id, -1)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-white rounded transition-colors"><Minus className="w-4 h-4" /></button>
-                  <input type="number" min="1" value={item.quantity} onChange={(e) => {
-                    const newQty = parseInt(e.target.value);
-                    if (!isNaN(newQty)) {
-                      setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: newQty } : i));
-                    }
-                  }} onBlur={(e) => {
-                    if (!parseInt(e.target.value) || parseInt(e.target.value) < 1) {
-                      setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: 1 } : i));
-                    }
-                  }} className="w-10 text-center text-sm font-bold text-slate-700 bg-transparent outline-none border border-slate-200 rounded hide-spin-button px-0.5" />
-                  <button onClick={() => updateQuantity(item.id, 1)} className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-white rounded transition-colors"><Plus className="w-4 h-4" /></button>
-                </div>
-                <div className="w-20 text-right font-bold text-slate-800 pl-2">
-                  ₦{(Number(item.quantity || 0) * Number(item.price || 0)).toLocaleString()}
+                <div className="flex items-center justify-between w-full md:w-auto">
+                  <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1 border border-slate-100 shrink-0">
+                    <button onClick={() => updateQuantity(item.id, -1)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-white rounded transition-colors"><Minus className="w-4 h-4" /></button>
+                    <input type="number" min="1" value={item.quantity} onChange={(e) => {
+                      const newQty = parseInt(e.target.value);
+                      if (!isNaN(newQty)) {
+                        setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: newQty } : i));
+                      }
+                    }} onBlur={(e) => {
+                      if (!parseInt(e.target.value) || parseInt(e.target.value) < 1) {
+                        setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: 1 } : i));
+                      }
+                    }} className="w-10 text-center text-sm font-bold text-slate-700 bg-transparent outline-none border border-slate-200 rounded hide-spin-button px-0.5" />
+                    <button onClick={() => updateQuantity(item.id, 1)} className="p-1 text-slate-400 hover:text-emerald-500 hover:bg-white rounded transition-colors"><Plus className="w-4 h-4" /></button>
+                  </div>
+                  <div className="w-auto md:w-20 text-right font-bold text-slate-800 pl-2">
+                    ₦{(Number(item.quantity || 0) * Number(item.price || 0)).toLocaleString()}
+                  </div>
                 </div>
               </div>
             ))
