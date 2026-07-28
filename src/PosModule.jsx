@@ -293,9 +293,14 @@ export default function PosModule({ currentTenant, currentUser }) {
                   <div className="flex items-center gap-1 bg-slate-50 rounded-lg p-1 border border-slate-100 shrink-0">
                     <button onClick={() => updateQuantity(item.id, -1)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-white rounded transition-colors"><Minus className="w-4 h-4" /></button>
                     <input type="number" min="1" value={item.quantity} onChange={(e) => {
-                      const newQty = parseInt(e.target.value);
-                      if (!isNaN(newQty)) {
-                        setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: newQty } : i));
+                      const val = e.target.value;
+                      if (val === '') {
+                        setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: '' } : i));
+                      } else {
+                        const newQty = parseInt(val);
+                        if (!isNaN(newQty)) {
+                          setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: newQty } : i));
+                        }
                       }
                     }} onBlur={(e) => {
                       if (!parseInt(e.target.value) || parseInt(e.target.value) < 1) {

@@ -344,9 +344,14 @@ export default function B2bOrderModule({ currentUser, products, currentTenant, t
                     <div className="flex items-center gap-1 bg-slate-50 rounded-lg border border-slate-100 p-1">
                       <button onClick={() => updateQty(item.productId, -1)} className="p-1 hover:bg-white rounded shadow-sm text-slate-500"><Minus className="w-3 h-3"/></button>
                       <input type="number" min="1" value={item.qty} onChange={(e) => {
-                        const newQty = parseInt(e.target.value);
-                        if (!isNaN(newQty)) {
-                          setCart(prev => prev.map(i => i.productId === item.productId ? { ...i, qty: newQty } : i));
+                        const val = e.target.value;
+                        if (val === '') {
+                          setCart(prev => prev.map(i => i.productId === item.productId ? { ...i, qty: '' } : i));
+                        } else {
+                          const newQty = parseInt(val);
+                          if (!isNaN(newQty)) {
+                            setCart(prev => prev.map(i => i.productId === item.productId ? { ...i, qty: newQty } : i));
+                          }
                         }
                       }} onBlur={(e) => {
                         if (!parseInt(e.target.value) || parseInt(e.target.value) < 1) {
