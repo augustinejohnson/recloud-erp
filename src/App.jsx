@@ -182,7 +182,7 @@ export default function App() {
   const [payslipCurrency, setPayslipCurrency] = useState('$');
   const [b2bOrders, setB2BOrders] = useState([]);
   const [payslipPeriod, setPayslipPeriod] = useState(new Date().toISOString().slice(0, 7));
-  const [payslipMonths, setPayslipMonths] = useState(1);
+  const [payslipEndPeriod, setPayslipEndPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [payslipTaxRate, setPayslipTaxRate] = useState(20);
   const [payslipLineItems, setPayslipLineItems] = useState([]);
 
@@ -2242,7 +2242,7 @@ export default function App() {
                                   const lastPayslip = empPayslips.length > 0 ? empPayslips[0] : null;
                                   setPayslipCurrency(lastPayslip?.currency || '$');
                                   setPayslipPeriod(new Date().toISOString().slice(0, 7));
-                                  setPayslipMonths(1);
+                                  setPayslipEndPeriod(new Date().toISOString().slice(0, 7));
                                   setPayslipTaxRate(lastPayslip?.taxRate !== undefined ? lastPayslip.taxRate : 20);
                                   setPayslipLineItems(lastPayslip?.lineItems || []);
                                   setIsPayslipModalOpen(true);
@@ -2938,12 +2938,12 @@ export default function App() {
                   <input type="number" min="0" max="100" value={payslipTaxRate} onChange={e => setPayslipTaxRate(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none bg-white" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Period (Month/Year)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Start Period</label>
                   <input type="month" value={payslipPeriod} onChange={e => setPayslipPeriod(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none bg-white" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Duration (Months)</label>
-                  <input type="number" min="1" max="12" value={payslipMonths} onChange={e => setPayslipMonths(Math.max(1, parseInt(e.target.value) || 1))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none bg-white" />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">End Period</label>
+                  <input type="month" value={payslipEndPeriod} onChange={e => setPayslipEndPeriod(e.target.value)} min={payslipPeriod} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-recloud-500/20 focus:border-recloud-500 outline-none bg-white" />
                 </div>
               </div>
               
@@ -2986,8 +2986,12 @@ export default function App() {
               
               <div className="space-y-3 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-inner">
                 {(() => {
+                  const d1 = new Date(payslipPeriod + '-01T00:00:00');
+                  const d2 = new Date(payslipEndPeriod + '-01T00:00:00');
+                  const calcMonths = Math.max(1, (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + 1);
+
                   const baseMonthly = Number(selectedPayslipEmp.salary) / 12;
-                  const baseGrossPay = (baseMonthly * payslipMonths) || 0;
+                  const baseGrossPay = (baseMonthly * calcMonths) || 0;
                   
                   const totalCustomEarnings = payslipLineItems.filter(i => i.type === 'Earning').reduce((acc, curr) => acc + curr.amount, 0);
                   const totalCustomDeductions = payslipLineItems.filter(i => i.type === 'Deduction').reduce((acc, curr) => acc + curr.amount, 0);
@@ -2996,8 +3000,7 @@ export default function App() {
                   const taxDeduction = taxableGross * (payslipTaxRate / 100);
                   
                   const netPay = taxableGross - taxDeduction - totalCustomDeductions;
-                  const d = new Date(payslipPeriod + '-01T00:00:00');
-                  const periodName = d.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + (payslipMonths > 1 ? ` (${payslipMonths} Months)` : '');
+                  const periodName = d1.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + (calcMonths > 1 ? ` – ${d2.toLocaleString('en-US', { month: 'long', year: 'numeric' })}` : '');
 
                   return (
                     <>
@@ -3034,8 +3037,12 @@ export default function App() {
               </div>
 
               <button onClick={async () => {
+                const d1 = new Date(payslipPeriod + '-01T00:00:00');
+                const d2 = new Date(payslipEndPeriod + '-01T00:00:00');
+                const calcMonths = Math.max(1, (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + 1);
+
                 const baseMonthlySalary = Number(selectedPayslipEmp.salary) / 12;
-                const baseGrossPay = (baseMonthlySalary * payslipMonths) || 0;
+                const baseGrossPay = (baseMonthlySalary * calcMonths) || 0;
                 
                 const totalCustomEarnings = payslipLineItems.filter(i => i.type === 'Earning').reduce((acc, curr) => acc + curr.amount, 0);
                 const totalCustomDeductions = payslipLineItems.filter(i => i.type === 'Deduction').reduce((acc, curr) => acc + curr.amount, 0);
@@ -3044,8 +3051,7 @@ export default function App() {
                 const taxDeduction = taxableGross * (payslipTaxRate / 100);
                 const netPay = taxableGross - taxDeduction - totalCustomDeductions;
                 
-                const d = new Date(payslipPeriod + '-01T00:00:00');
-                const periodStr = d.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + (payslipMonths > 1 ? ` (${payslipMonths} Months)` : '');
+                const periodStr = d1.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + (calcMonths > 1 ? ` – ${d2.toLocaleString('en-US', { month: 'long', year: 'numeric' })}` : '');
                 
                 await generatePayslip({
                   employeeId: selectedPayslipEmp.id,
